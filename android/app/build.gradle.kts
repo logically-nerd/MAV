@@ -1,3 +1,7 @@
+import com.android.build.gradle.internal.cxx.configure.gradleLocalProperties
+import java.util.Properties
+import java.io.FileInputStream
+
 plugins {
     id("com.android.application")
     id("kotlin-android")
@@ -6,10 +10,16 @@ plugins {
 }
 
 android {
+    buildFeatures {
+        buildConfig = true
+    }
+
     namespace = "com.example.sensor_demo"
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
+    ndkVersion = "27.0.12077973"
 
+   
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_11
         targetCompatibility = JavaVersion.VERSION_11
@@ -28,6 +38,16 @@ android {
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
+        
+        val localProperties = Properties().apply {
+            load(FileInputStream(rootProject.file("local.properties")))
+        }
+        val apiKey = localProperties.getProperty("GOOGLE_MAPS_API_KEY")
+            ?: throw GradleException("Missing GOOGLE_MAPS_API_KEY in local.properties")
+        
+        manifestPlaceholders["GOOGLE_MAPS_API_KEY"] = apiKey
+        buildConfigField("String", "GOOGLE_MAPS_API_KEY", "\"$apiKey\"")
+        
     }
 
     buildTypes {
@@ -41,4 +61,15 @@ android {
 
 flutter {
     source = "../.."
+}
+
+dependencies {
+    // CameraX core library
+    implementation("androidx.camera:camera-core:1.2.2")
+    // CameraX Camera2 extensions
+    implementation("androidx.camera:camera-camera2:1.2.2")
+    // CameraX Lifecycle library
+    implementation("androidx.camera:camera-lifecycle:1.2.2")
+    // CameraX View class
+    implementation("androidx.camera:camera-view:1.2.2")
 }

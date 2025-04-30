@@ -1,158 +1,88 @@
 import 'package:flutter/material.dart';
-// import 'package:sensors_plus/sensors_plus.dart';
-import 'dart:math';
-import 'sensor_readings.dart'; // Import your SensorReadings class
+import 'screens/sensor_screen/sensor_screen.dart';
+import 'screens/camera_screen/camera_screen.dart';
+import 'screens/map_screen/map_screen.dart';
 
 void main() {
-  runApp(const MovementDetectorApp());
+  runApp(const MyApp());
 }
 
-class MovementDetectorApp extends StatelessWidget {
-  const MovementDetectorApp({super.key});
+class MyApp extends StatelessWidget {
+  const MyApp({super.key});
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Device Movement Detector',
+      title: 'MAV',
       theme: ThemeData(
         primarySwatch: Colors.blue,
+        useMaterial3: true,
+        scaffoldBackgroundColor: const Color(0xFF0A192F),
+        textTheme: const TextTheme(
+          bodyLarge: TextStyle(color: Colors.white),
+          bodyMedium: TextStyle(color: Colors.white),
+          titleLarge: TextStyle(color: Colors.white),
+        ),
       ),
-      home: const MovementDetectorScreen(),
-      debugShowCheckedModeBanner: false,
+      home: const HomePage(),
     );
   }
 }
 
-class MovementDetectorScreen extends StatefulWidget {
-  const MovementDetectorScreen({super.key});
+class HomePage extends StatefulWidget {
+  const HomePage({super.key});
 
   @override
-  State<MovementDetectorScreen> createState() => _MovementDetectorScreenState();
+  State<HomePage> createState() => _HomePageState();
 }
 
-class _MovementDetectorScreenState extends State<MovementDetectorScreen> {
-  late final SensorReadings _sensorReadings;
-  double _movementScore = 0.0;
+class _HomePageState extends State<HomePage> {
+  int _selectedIndex = 0;
 
-  @override
-  void initState() {
-    super.initState();
-    _sensorReadings = SensorReadings();
-  }
+  static const List<Widget> _pages = <Widget>[
+    SensorScreen(),
+    CameraScreen(),
+    MapScreen(),
+  ];
 
-  @override
-  void dispose() {
-    _sensorReadings.dispose();
-    super.dispose();
+  void _onItemTapped(int index) {
+    setState(() {
+      _selectedIndex = index;
+    });
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Device Orientation Detector'),
+        title: const Text('MAV'),
+        backgroundColor: const Color(0xFF0A192F),
+        foregroundColor: Colors.white,
       ),
       body: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            // Movement Score
-            const Text(
-              'Movement Score',
-              style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-            ),
-            StreamBuilder(
-              stream: Stream.periodic(const Duration(milliseconds: 100)),
-              builder: (context, snapshot) {
-                _movementScore = (_sensorReadings.smoothedAcceleration * 0.7) +
-                    (_sensorReadings.smoothedRotation * 0.3);
-                return Column(
-                  children: [
-                    Text(
-                      _movementScore.toStringAsFixed(2),
-                      style: TextStyle(
-                        fontSize: 24,
-                        color: _getMovementColor(_movementScore),
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-                    _buildMovementIndicator(_movementScore),
-                  ],
-                );
-              },
-            ),
-
-            const SizedBox(height: 30),
-
-            // Rotation Angles
-            const Text(
-              'Rotation Angles',
-              style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-            ),
-            StreamBuilder(
-              stream: Stream.periodic(const Duration(milliseconds: 100)),
-              builder: (context, snapshot) {
-                return Column(
-                  children: [
-                    Text(
-                        'Roll (X): ${_sensorReadings.rollAngle.toStringAsFixed(1)}°'),
-                    Text(
-                        'Pitch (Y): ${_sensorReadings.pitchAngle.toStringAsFixed(1)}°'),
-                    Text(
-                        'Yaw (Z): ${_sensorReadings.yawAngle.toStringAsFixed(1)}°'),
-                  ],
-                );
-              },
-            ),
-          ],
-        ),
+        child: _pages.elementAt(_selectedIndex),
       ),
-    );
-  }
-
-  Color _getMovementColor(double score) {
-    if (score < 0.5) return Colors.green;
-    if (score < 2.0) return Colors.orange;
-    return Colors.red;
-  }
-
-  Widget _buildMovementIndicator(double score) {
-    double indicatorWidth = MediaQuery.of(context).size.width * 0.8;
-    double filledWidth = min(score * 50, indicatorWidth);
-
-    return Container(
-      height: 30,
-      width: indicatorWidth,
-      decoration: BoxDecoration(
-        border: Border.all(color: Colors.grey),
-        borderRadius: BorderRadius.circular(15),
-      ),
-      child: Stack(
-        children: [
-          Container(
-            width: filledWidth,
-            decoration: BoxDecoration(
-              color: _getMovementColor(score),
-              borderRadius: BorderRadius.circular(15),
-            ),
+      bottomNavigationBar: BottomNavigationBar(
+        items: const <BottomNavigationBarItem>[
+          BottomNavigationBarItem(
+            icon: Icon(Icons.directions_run),
+            label: 'Movement',
           ),
-          Center(
-            child: Text(
-              _getMovementText(score),
-              style: const TextStyle(
-                  color: Color.fromARGB(255, 21, 20, 33),
-                  fontWeight: FontWeight.bold),
-            ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.camera),
+            label: 'Camera',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.map),
+            label: 'Map',
           ),
         ],
+        currentIndex: _selectedIndex,
+        selectedItemColor: Colors.blue,
+        backgroundColor: const Color(0xFF0A192F),
+        unselectedItemColor: Colors.white70,
+        onTap: _onItemTapped,
       ),
     );
-  }
-
-  String _getMovementText(double score) {
-    if (score < 0.2) return "Device is still";
-    if (score < 0.5) return "Slight movement";
-    if (score < 2.0) return "Moderate movement";
-    return "Strong movement!";
   }
 }

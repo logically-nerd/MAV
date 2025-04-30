@@ -2,8 +2,7 @@ import 'package:sensors_plus/sensors_plus.dart';
 import 'dart:math';
 import 'dart:async';
 
-class SensorReadings {
-  // Raw sensor values
+class SensorService {
   double _accelX = 0.0;
   double _accelY = 0.0;
   double _accelZ = 0.0;
@@ -33,7 +32,7 @@ class SensorReadings {
   late StreamSubscription<AccelerometerEvent> _accelSubscription;
   late StreamSubscription<GyroscopeEvent> _gyroSubscription;
 
-  SensorReadings() {
+  startListening() {
     _initSensors();
   }
 
