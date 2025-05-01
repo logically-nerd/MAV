@@ -2,8 +2,11 @@ import 'package:flutter/material.dart';
 import 'screens/sensor_screen/sensor_screen.dart';
 import 'screens/camera_screen/camera_screen.dart';
 import 'screens/map_screen/map_screen.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 
-void main() {
+Future<void> main() async {
+  // await dotenv.load();
+  // await dotenv.load(fileName: ".env");
   runApp(const MyApp());
 }
 
