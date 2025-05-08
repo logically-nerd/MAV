@@ -1,10 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
-import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart' as gmaps;
 import 'package:geolocator/geolocator.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import '../../services/map_service/map_service.dart';
+import 'package:flutter_google_street_view/flutter_google_street_view.dart' as street_view;
 
 class MapScreen extends StatefulWidget {
   const MapScreen({super.key});
@@ -17,12 +18,14 @@ class _MapScreenState extends State<MapScreen> {
   final MapService _mapService = MapService();
   final TextEditingController _sourceController = TextEditingController();
   final TextEditingController _destinationController = TextEditingController();
-  GoogleMapController? _mapController;
-  LatLng? _currentPosition;
-  LatLng? _sourcePosition;
-  LatLng? _destinationPosition;
-  Set<Polyline> _polylines = {};
+  gmaps.GoogleMapController? _mapController;
+  street_view.StreetViewController? _streetViewController;
+  gmaps.LatLng? _currentPosition;
+  gmaps.LatLng? _sourcePosition;
+  gmaps.LatLng? _destinationPosition;
+  Set<gmaps.Polyline> _polylines = {};
   bool _isLoading = true;
+  bool _isStreetViewActive = false;
   static final String _googleApiKey = "AIzaSyAYS5gaj5OKjGHzlkeLwMch5sf69IItK60";
 
   // For gesture handling
@@ -41,7 +44,7 @@ class _MapScreenState extends State<MapScreen> {
       Position position = await _mapService.getCurrentLocation();
       if (mounted) {
         setState(() {
-          _currentPosition = LatLng(position.latitude, position.longitude);
+          _currentPosition = gmaps.LatLng(position.latitude, position.longitude);
           _sourcePosition = _currentPosition;
           _sourceController.text =
               '${position.latitude}, ${position.longitude}';
@@ -59,9 +62,9 @@ class _MapScreenState extends State<MapScreen> {
     }
   }
 
-  void _moveCamera(LatLng position) {
+  void _moveCamera(gmaps.LatLng position) {
     _mapController?.animateCamera(
-      CameraUpdate.newLatLngZoom(position, 15),
+      gmaps.CameraUpdate.newLatLngZoom(position, 15),
     );
   }
 
@@ -84,8 +87,8 @@ class _MapScreenState extends State<MapScreen> {
       if (mounted) {
         setState(() {
           _polylines = {
-            Polyline(
-              polylineId: const PolylineId('route'),
+            gmaps.Polyline(
+              polylineId: const gmaps.PolylineId('route'),
               color: Colors.blue,
               width: 5,
               points: polylinePoints,
@@ -110,7 +113,7 @@ class _MapScreenState extends State<MapScreen> {
       final lat = double.tryParse(parts[0].trim());
       final lng = double.tryParse(parts[1].trim());
       if (lat != null && lng != null) {
-        setState(() => _sourcePosition = LatLng(lat, lng));
+        setState(() => _sourcePosition = gmaps.LatLng(lat, lng));
       }
     }
   }
@@ -121,9 +124,29 @@ class _MapScreenState extends State<MapScreen> {
       final lat = double.tryParse(parts[0].trim());
       final lng = double.tryParse(parts[1].trim());
       if (lat != null && lng != null) {
-        setState(() => _destinationPosition = LatLng(lat, lng));
+        setState(() => _destinationPosition = gmaps.LatLng(lat, lng));
       }
     }
+  }
+
+  void _toggleStreetView() {
+    setState(() {
+      _isStreetViewActive = !_isStreetViewActive;
+    });
+  }
+
+  void _onStreetViewCreated(street_view.StreetViewController controller)  async{
+    _streetViewController = controller;
+    
+    await controller.animateTo(
+      duration: 750,
+      camera: street_view.StreetViewPanoramaCamera(
+        bearing: 80, 
+        tilt: 10, 
+        zoom: 1
+      )
+    );
+    
   }
 
   @override
@@ -147,9 +170,51 @@ class _MapScreenState extends State<MapScreen> {
                   ],
                 ),
               )
+            else if (_isStreetViewActive && _currentPosition != null)
+              street_view.FlutterGoogleStreetView(
+               /**
+                 * Setting initial position based on current location
+                 */
+                initPos: street_view.LatLng(_currentPosition!.latitude, _currentPosition!.longitude),
+                
+                /**
+                 * Filter panorama to outdoor only
+                 */
+                initSource: street_view.StreetViewSource.outdoor,
+
+                /**
+                 * Initial camera bearing (direction)
+                 */
+                initBearing: 30,
+                
+                /**
+                 * Initial camera tilt
+                 */
+                initTilt: 0,
+
+                /**
+                 * Initial zoom level
+                 */
+                initZoom: 1.0,
+
+                /**
+                 * Enable/disable various controls
+                 */
+                zoomGesturesEnabled: true,
+                panningGesturesEnabled: false,
+                streetNamesEnabled: true,
+                userNavigationEnabled: true,
+                // compassEnabled: true,
+
+                /**
+                 * Controller to manipulate street view after initialization
+                 */
+                onStreetViewCreated: _onStreetViewCreated,
+ 
+              )
             else
-              GoogleMap(
-                initialCameraPosition: CameraPosition(
+              gmaps.GoogleMap(
+                initialCameraPosition: gmaps.CameraPosition(
                   target: _currentPosition!,
                   zoom: 15,
                 ),
@@ -158,21 +223,21 @@ class _MapScreenState extends State<MapScreen> {
                 polylines: _polylines,
                 markers: {
                   if (_sourcePosition != null)
-                    Marker(
-                      markerId: const MarkerId('source'),
+                    gmaps.Marker(
+                      markerId: const gmaps.MarkerId('source'),
                       position: _sourcePosition!,
-                      infoWindow: const InfoWindow(title: 'Source'),
-                      icon: BitmapDescriptor.defaultMarkerWithHue(
-                        BitmapDescriptor.hueGreen,
+                      infoWindow: const gmaps.InfoWindow(title: 'Source'),
+                      icon: gmaps.BitmapDescriptor.defaultMarkerWithHue(
+                        gmaps.BitmapDescriptor.hueGreen,
                       ),
                     ),
                   if (_destinationPosition != null)
-                    Marker(
-                      markerId: const MarkerId('destination'),
+                    gmaps.Marker(
+                      markerId: const gmaps.MarkerId('destination'),
                       position: _destinationPosition!,
-                      infoWindow: const InfoWindow(title: 'Destination'),
-                      icon: BitmapDescriptor.defaultMarkerWithHue(
-                        BitmapDescriptor.hueRed,
+                      infoWindow: const gmaps.InfoWindow(title: 'Destination'),
+                      icon: gmaps.BitmapDescriptor.defaultMarkerWithHue(
+                        gmaps.BitmapDescriptor.hueRed,
                       ),
                     ),
                 },
@@ -218,30 +283,64 @@ class _MapScreenState extends State<MapScreen> {
                         onChanged: _onDestinationChanged,
                       ),
                       const SizedBox(height: 8),
-                      SizedBox(
-                        width: double.infinity,
-                        child: ElevatedButton(
-                          style: ElevatedButton.styleFrom(
-                            padding: const EdgeInsets.symmetric(vertical: 12),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: ElevatedButton(
+                              style: ElevatedButton.styleFrom(
+                                padding: const EdgeInsets.symmetric(vertical: 12),
+                              ),
+                              onPressed: _drawPolyline,
+                              child: _isLoading
+                                  ? const SizedBox(
+                                      height: 20,
+                                      width: 20,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                        color: Colors.white,
+                                      ),
+                                    )
+                                  : const Text('Show Route'),
+                            ),
                           ),
-                          onPressed: _drawPolyline,
-                          child: _isLoading
-                              ? const SizedBox(
-                                  height: 20,
-                                  width: 20,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                    color: Colors.white,
-                                  ),
-                                )
-                              : const Text('Show Route'),
-                        ),
+                        ],
                       ),
                     ],
                   ),
                 ),
               ),
             ),
+            // 360° Street View Toggle Button
+            Positioned(
+              bottom: 100,
+              right: 12,
+              child: FloatingActionButton(
+                heroTag: "streetViewToggleBtn",
+                backgroundColor: _isStreetViewActive ? Colors.blue : Colors.white,
+                onPressed: _toggleStreetView,
+                tooltip: '360° View',
+                child: Icon(
+                  Icons.view_in_ar,
+                  color: _isStreetViewActive ? Colors.white : Colors.black87,
+                ),
+              ),
+            ),
+            // Back Button when in Street View
+            if (_isStreetViewActive)
+              Positioned(
+                top: 16,
+                left: 16,
+                child: FloatingActionButton(
+                  mini: true,
+                  heroTag: "backToMapBtn",
+                  backgroundColor: Colors.white,
+                  onPressed: _toggleStreetView,
+                  child: const Icon(
+                    Icons.arrow_back,
+                    color: Colors.black87,
+                  ),
+                ),
+              ),
           ],
         ),
       ),
@@ -251,6 +350,7 @@ class _MapScreenState extends State<MapScreen> {
   @override
   void dispose() {
     _mapController?.dispose();
+    _streetViewController?.dispose();
     _sourceController.dispose();
     _destinationController.dispose();
     super.dispose();

@@ -15,6 +15,7 @@ android {
     }
 
     namespace = "com.example.sensor_demo"
+    
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
     ndkVersion = "27.0.12077973"
