@@ -64,7 +64,7 @@ class _HomePageState extends State<HomePage> {
   }
 
   List<Widget> get _pages => <Widget>[
-    const SensorScreen(),
+    // const SensorScreen(),
     _cameras.isNotEmpty ? YoloDetectionApp(cameras: _cameras) : const Center(child: CircularProgressIndicator()),
     const MapScreen(),
   ];
@@ -88,10 +88,10 @@ class _HomePageState extends State<HomePage> {
       ),
       bottomNavigationBar: BottomNavigationBar(
         items: const <BottomNavigationBarItem>[
-          BottomNavigationBarItem(
-            icon: Icon(Icons.directions_run),
-            label: 'Movement',
-          ),
+          // BottomNavigationBarItem(
+          //   icon: Icon(Icons.directions_run),
+          //   label: 'Movement',
+          // ),
           BottomNavigationBarItem(
             icon: Icon(Icons.camera),
             label: 'Camera',
