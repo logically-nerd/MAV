@@ -63,8 +63,17 @@ android {
 flutter {
     source = "../.."
 }
+configurations.all {
+    resolutionStrategy {
+        force("com.google.guava:guava:31.0.1-android")
+        exclude("com.google.guava", "listenablefuture")
+    }
+}
+
 
 dependencies {
+    implementation("com.google.guava:guava:31.0.1-android")
+
     // CameraX core library
     implementation("androidx.camera:camera-core:1.2.2")
     // CameraX Camera2 extensions

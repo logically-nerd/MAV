@@ -3,13 +3,18 @@ import 'screens/camera_screen/camera_screen.dart';
 import 'screens/map_screen/map_screen.dart';
 import 'screens/sensor_screen/sensor_screen.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'package:camera/camera.dart';
+import 'screens/yoloe_screen/websocket_client_yoloe.dart';
 
 Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+   
   runApp(const MyApp());
 }
 
 class MyApp extends StatelessWidget {
   const MyApp({super.key});
+  
 
   @override
   Widget build(BuildContext context) {
@@ -41,10 +46,23 @@ class HomePage extends StatefulWidget {
 class _HomePageState extends State<HomePage> {
   int _selectedIndex = 0;
 
-  static const List<Widget> _pages = <Widget>[
-    SensorScreen(),
-    CameraScreen(),
-    MapScreen(),
+  late List<CameraDescription> _cameras;
+
+  @override
+  void initState() {
+    super.initState();
+    _initializeCameras();
+  }
+
+  Future<void> _initializeCameras() async {
+    _cameras = await availableCameras();
+    setState(() {});
+  }
+
+  List<Widget> get _pages => <Widget>[
+    const SensorScreen(),
+    YoloDetectionApp(cameras: _cameras),
+    const MapScreen(),
   ];
 
   void _onItemTapped(int index) {
