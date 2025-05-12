@@ -35,9 +35,9 @@ class _YoloDetectionAppState extends State<YoloDetectionApp> {
 
   // Configuration
   String _serverUrl =
-      'ws://192.168.143.31:8765'; // Default for Android emulator connecting to localhost
+      'ws://192.168.29.6:8765'; // Default for Android emulator connecting to localhost
   double _confidenceThreshold = 0.25;
-  int _frameSkip = 3; // Process every Nth frame
+  int _frameSkip = 15; // Process every Nth frame
   int _currentFrameCount = 0;
   bool _showDetections = true;
 
@@ -78,14 +78,31 @@ class _YoloDetectionAppState extends State<YoloDetectionApp> {
         return;
       }
 
-      final base64Image = base64Encode(jpegBytes);
+      // RESIZE THE IMAGE before sending
+      final resizedBytes = await _resizeImageBeforeSending(jpegBytes);
+      debugPrint(
+          'Original size: ${jpegBytes.length} bytes, Resized: ${resizedBytes.length} bytes');
+
+      // Only send if under the WebSocket size limit (1MB)
+      final base64Size =
+          (resizedBytes.length * 4) ~/ 3 + 4; // Base64 size estimate
+      if (base64Size > 1000000) {
+        // 1MB limit
+        debugPrint(
+            'Warning: Image still too large for WebSocket (${base64Size} bytes), skipping');
+        return;
+      }
+
+      final base64Image = base64Encode(resizedBytes);
 
       final message = jsonEncode({
         'type': 'image',
         'data': base64Image,
-        'format': 'jpeg', // Important: specify the format as JPEG
-        'width': image.width,
-        'height': image.height,
+        'format': 'png',
+        'width': 640, // Use resized dimensions
+        'height': (image.height * 640 / image.width).round(),
+        'original_width': image.width,
+        'original_height': image.height,
         'conf': _confidenceThreshold,
       });
 
@@ -220,7 +237,7 @@ class _YoloDetectionAppState extends State<YoloDetectionApp> {
       bytes,
       image.width,
       image.height,
-      format: ui.ImageByteFormat.rawRgba,
+      pixelFormat: ui.PixelFormat.rgba8888,
     );
   }
 
@@ -228,22 +245,62 @@ class _YoloDetectionAppState extends State<YoloDetectionApp> {
     Uint8List bytes,
     int width,
     int height, {
-    ui.ImageByteFormat format = ui.ImageByteFormat.rawRgba,
+    ui.PixelFormat pixelFormat = ui.PixelFormat.rgba8888,
   }) async {
     final completer = Completer<Uint8List>();
     ui.decodeImageFromPixels(
       bytes,
       width,
       height,
-      format as ui.PixelFormat,
-      (ui.Image image) {
-        image.toByteData(format: ui.ImageByteFormat.png).then((byteData) {
-          completer.complete(byteData!.buffer.asUint8List());
-          image.dispose();
-        });
+      pixelFormat, // Use correct PixelFormat type
+      (ui.Image image) async {
+        final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
+        completer.complete(byteData!.buffer.asUint8List());
+        image.dispose();
       },
     );
     return await completer.future;
+  }
+
+  Future<Uint8List> _resizeImageBeforeSending(Uint8List imageBytes) async {
+    final completer = Completer<Uint8List>();
+
+    try {
+      // Create an image from the bytes
+      final codec = await ui.instantiateImageCodec(imageBytes);
+      final frameInfo = await codec.getNextFrame();
+      final image = frameInfo.image;
+
+      // Calculate target size - resize to 640x480 or similar
+      final targetWidth = 640;
+      final targetHeight = (image.height * 640 / image.width).round();
+
+      // Create a scaled image
+      final resizedCodec = await ui.instantiateImageCodec(
+        imageBytes,
+        targetWidth: targetWidth,
+        targetHeight: targetHeight,
+      );
+      final resizedFrame = await resizedCodec.getNextFrame();
+      final resizedImage = resizedFrame.image;
+
+      // Convert to PNG with reduced quality
+      final byteData = await resizedImage.toByteData(
+        format: ui.ImageByteFormat.png,
+      );
+
+      completer.complete(byteData!.buffer.asUint8List());
+
+      // Clean up
+      image.dispose();
+      resizedImage.dispose();
+    } catch (e) {
+      debugPrint('Error resizing image: $e');
+      // Return original if resizing fails
+      completer.complete(imageBytes);
+    }
+
+    return completer.future;
   }
 
   void _startFpsCounter() {
@@ -272,10 +329,10 @@ class _YoloDetectionAppState extends State<YoloDetectionApp> {
       return;
     }
 
-    // Use the first available camera
+    // Use the first available camera with MEDIUM resolution instead of HIGH
     _cameraController = CameraController(
       widget.cameras[0],
-      ResolutionPreset.high,
+      ResolutionPreset.low,
       enableAudio: false,
     );
 
@@ -641,7 +698,7 @@ class _YoloDetectionAppState extends State<YoloDetectionApp> {
                       child: Slider(
                         value: _frameSkip.toDouble(),
                         min: 1,
-                        max: 10,
+                        max: 20,
                         divisions: 9,
                         label: _frameSkip.toString(),
                         onChanged: (value) {

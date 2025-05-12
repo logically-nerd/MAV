@@ -46,7 +46,7 @@ class HomePage extends StatefulWidget {
 class _HomePageState extends State<HomePage> {
   int _selectedIndex = 0;
 
-  late List<CameraDescription> _cameras;
+  late List<CameraDescription> _cameras = [];
 
   @override
   void initState() {
@@ -55,13 +55,17 @@ class _HomePageState extends State<HomePage> {
   }
 
   Future<void> _initializeCameras() async {
-    _cameras = await availableCameras();
-    setState(() {});
+    try {
+      _cameras = await availableCameras();
+      setState(() {});
+    } catch (e) {
+      debugPrint('Error initializing cameras: $e');
+    }
   }
 
   List<Widget> get _pages => <Widget>[
     const SensorScreen(),
-    YoloDetectionApp(cameras: _cameras),
+    _cameras.isNotEmpty ? YoloDetectionApp(cameras: _cameras) : const Center(child: CircularProgressIndicator()),
     const MapScreen(),
   ];
 
