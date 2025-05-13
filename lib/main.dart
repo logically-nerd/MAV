@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:sensor_demo/services/intent_listener_widget.dart';
+import 'package:sensor_demo/screens/intent_listener_widget.dart';
 import 'screens/camera_screen/camera_screen.dart';
 import 'screens/map_screen/map_screen.dart';
 import 'screens/sensor_screen/sensor_screen.dart';

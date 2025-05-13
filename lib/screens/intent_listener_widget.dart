@@ -1,9 +1,9 @@
 import 'dart:async'; // Add this for Timer
 import 'package:flutter/material.dart';
 import 'package:flutter/gestures.dart';
-import './speech_intent_service.dart';
-import './confirmation_handler.dart';
-import './sos_service.dart';
+import '../services/conversation_service/speech_intent_service.dart';
+import '../services/conversation_service/confirmation_handler.dart';
+import '../services/conversation_service/sos_service.dart';
 
 class IntentListenerWidget extends StatefulWidget {
   const IntentListenerWidget({Key? key}) : super(key: key);
