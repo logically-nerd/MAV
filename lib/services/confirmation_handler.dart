@@ -20,14 +20,14 @@ class ConfirmationHandler {
   Future<bool?> confirmDestination(String destination) async {
     print("[Confirm] Asking for confirmation: $destination");
     await _tts.speak("You said navigate to $destination. Should I go ahead?");
-    await Future.delayed(const Duration(milliseconds: 100));
+    await Future.delayed(const Duration(milliseconds: 300));
     return _handleConfirmation();
   }
 
   Future<bool?> confirmAwareness() async {
     print("[Confirm] Confirming awareness intent");
     await _tts.speak("You asked for surrounding awareness. Is that correct?");
-    await Future.delayed(const Duration(milliseconds: 100));
+    await Future.delayed(const Duration(milliseconds: 300));
     return _handleConfirmation();
   }
 

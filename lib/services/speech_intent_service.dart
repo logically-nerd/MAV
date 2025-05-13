@@ -1,10 +1,10 @@
-// speech_intent_service.dart
 import 'dart:async';
 import 'package:flutter/services.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
 import 'package:flutter_tts/flutter_tts.dart';
+import 'sos_service.dart';
 
-enum IntentType { navigate, awareness, unknown }
+enum IntentType { navigate, awareness, sos, unknown }
 
 class IntentResult {
   final IntentType intent;
@@ -20,6 +20,7 @@ class SpeechIntentService {
 
   final stt.SpeechToText _speech = stt.SpeechToText();
   final FlutterTts _tts = FlutterTts();
+  final SOSService _sosService = SOSService.instance; // Add SOSService here
   bool _isListening = false;
 
   SpeechIntentService._internal();
@@ -67,7 +68,7 @@ class SpeechIntentService {
     }
 
     await _feedbackStart();
-    await Future.delayed(const Duration(milliseconds: 100));
+    await Future.delayed(const Duration(milliseconds: 300));
 
     Completer<IntentResult?> completer = Completer();
     bool resultHandled = false;
@@ -109,6 +110,14 @@ class SpeechIntentService {
             return;
           }
 
+          // Prioritize SOS commands
+          if (_matchesSOS(transcript)) {
+            await _sosService.triggerSOS(); // Trigger SOS here
+            completer.complete(null);
+            _isListening = false;
+            return;
+          }
+
           final intent = _classifyIntent(transcript);
           final isMissingDestination = intent.intent == IntentType.navigate &&
               (intent.destination == null || intent.destination!.isEmpty);
@@ -143,6 +152,17 @@ class SpeechIntentService {
     } else {
       return IntentResult(intent: IntentType.unknown, raw: sentence);
     }
+  }
+
+  bool _matchesSOS(String sentence) {
+    const emergencyKeywords = [
+      "help",
+      "emergency",
+      "call 112",
+      "emergency services",
+      "urgent"
+    ];
+    return emergencyKeywords.any((p) => sentence.contains(p));
   }
 
   bool _matchesAwareness(String sentence) {

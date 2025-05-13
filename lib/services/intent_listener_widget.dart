@@ -1,7 +1,8 @@
-// intent_listener_widget.dart
 import 'package:flutter/material.dart';
+import 'package:flutter/gestures.dart';
 import './speech_intent_service.dart';
 import './confirmation_handler.dart';
+import './sos_service.dart'; // Import SOS service
 
 class IntentListenerWidget extends StatefulWidget {
   const IntentListenerWidget({Key? key}) : super(key: key);
@@ -36,9 +37,27 @@ class _IntentListenerWidgetState extends State<IntentListenerWidget> {
 
   @override
   Widget build(BuildContext context) {
-    return ElevatedButton(
-      onPressed: _startListening,
-      child: const Text("Start Voice Command"),
+    return RawGestureDetector(
+      gestures: {
+        SerialTapGestureRecognizer:
+            GestureRecognizerFactoryWithHandlers<SerialTapGestureRecognizer>(
+                SerialTapGestureRecognizer.new,
+                (SerialTapGestureRecognizer instance) {
+          instance.onSerialTapDown = (SerialTapDownDetails details) {
+            if (details.count == 3) {
+              print('[UI] Triple tap detected. Triggering SOS.');
+              SOSService.instance.triggerSOS();
+            }
+          };
+        }),
+      },
+      behavior: HitTestBehavior.opaque,
+      child: Center(
+        child: ElevatedButton(
+          onPressed: _startListening,
+          child: const Text("Start Voice Command"),
+        ),
+      ),
     );
   }
 }
