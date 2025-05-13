@@ -41,12 +41,12 @@ class SpeechIntentService {
   }
 
   Future<void> _feedbackStart() async {
-    HapticFeedback.mediumImpact();
+    HapticFeedback.heavyImpact();
     await _speak("Listening");
   }
 
   Future<void> _feedbackStop() async {
-    HapticFeedback.vibrate();
+    HapticFeedback.heavyImpact();
   }
 
   Future<IntentResult?> listenAndClassify() async {

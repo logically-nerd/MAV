@@ -35,7 +35,7 @@ class ConfirmationHandler {
     int attempts = 0;
 
     while (attempts < 2) {
-      HapticFeedback.mediumImpact();
+      HapticFeedback.heavyImpact();
       print("[Confirm] Listening attempt: $attempts");
 
       bool available = await _speech.initialize();
