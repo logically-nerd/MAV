@@ -1,23 +1,22 @@
 name: sensor_demo
 description: "A new Flutter project."
- 
-publish_to: 'none' # Remove this line if you wish to publish to pub.dev
+
+publish_to: "none" # Remove this line if you wish to publish to pub.dev
 
 version: 1.0.0+1
 
 environment:
-  sdk: '>=3.2.3 <4.0.0'
+  sdk: ">=3.2.3 <4.0.0"
 
 dependencies:
   flutter:
     sdk: flutter
   cupertino_icons: ^1.0.2
   sensors_plus: ^6.1.1
-  ffi: ^2.0.0 
+  ffi: ^2.0.0
   image_picker: ^0.8.7+4
   exif: ^3.3.0
   path_provider: ^2.0.15
-  permission_handler: ^11.2.0
   google_maps_flutter: ^2.5.3
   http: ^1.2.0
   location: ^5.0.3
@@ -29,9 +28,7 @@ dependencies:
   flutter_google_street_view: ^3.1.4
   camera: ^0.11.1
   web_socket_channel: ^3.0.3
-
-   
-   
+  speech_to_text: ^7.0.0
 
 dev_dependencies:
   flutter_test:
@@ -49,7 +46,6 @@ dev_dependencies:
 
 # The following section is specific to Flutter packages.
 flutter:
-
   # The following line ensures that the Material Icons font is
   # included with your application, so that you can use the icons in
   # the material Icons class.

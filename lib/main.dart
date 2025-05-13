@@ -1,20 +1,19 @@
 import 'package:flutter/material.dart';
+import 'package:sensor_demo/services/intent_listener_widget.dart';
 import 'screens/camera_screen/camera_screen.dart';
 import 'screens/map_screen/map_screen.dart';
 import 'screens/sensor_screen/sensor_screen.dart';
-import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:camera/camera.dart';
 import 'screens/yoloe_screen/websocket_client_yoloe.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-   
+
   runApp(const MyApp());
 }
 
 class MyApp extends StatelessWidget {
   const MyApp({super.key});
-  
 
   @override
   Widget build(BuildContext context) {
@@ -64,10 +63,13 @@ class _HomePageState extends State<HomePage> {
   }
 
   List<Widget> get _pages => <Widget>[
-    // const SensorScreen(),
-    _cameras.isNotEmpty ? YoloDetectionApp(cameras: _cameras) : const Center(child: CircularProgressIndicator()),
-    const MapScreen(),
-  ];
+        // const SensorScreen(),
+        const IntentListenerWidget(),
+        _cameras.isNotEmpty
+            ? YoloDetectionApp(cameras: _cameras)
+            : const Center(child: CircularProgressIndicator()),
+        const MapScreen(),
+      ];
 
   void _onItemTapped(int index) {
     setState(() {
@@ -88,10 +90,10 @@ class _HomePageState extends State<HomePage> {
       ),
       bottomNavigationBar: BottomNavigationBar(
         items: const <BottomNavigationBarItem>[
-          // BottomNavigationBarItem(
-          //   icon: Icon(Icons.directions_run),
-          //   label: 'Movement',
-          // ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.directions_run),
+            label: 'Movement',
+          ),
           BottomNavigationBarItem(
             icon: Icon(Icons.camera),
             label: 'Camera',
