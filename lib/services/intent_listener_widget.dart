@@ -1,8 +1,9 @@
+import 'dart:async'; // Add this for Timer
 import 'package:flutter/material.dart';
 import 'package:flutter/gestures.dart';
 import './speech_intent_service.dart';
 import './confirmation_handler.dart';
-import './sos_service.dart'; // Import SOS service
+import './sos_service.dart';
 
 class IntentListenerWidget extends StatefulWidget {
   const IntentListenerWidget({Key? key}) : super(key: key);
@@ -14,29 +15,31 @@ class IntentListenerWidget extends StatefulWidget {
 class _IntentListenerWidgetState extends State<IntentListenerWidget> {
   final _intentService = SpeechIntentService.instance;
   final _confirmationHandler = ConfirmationHandler();
-  bool _isListening = false; // Track listening state
-  double _circleSize = 100.0; // Default circle size
-  Color buttonColor = Colors.green; // Default button color
-  String buttonText = "Start Voice Command"; // Default button text
+  bool _isListening = false;
+  double _circleSize = 100.0;
+  Color buttonColor = Colors.green;
+  String buttonText = "Start Voice Command";
 
-  // This will be triggered only if it's not already listening
+  Timer? _tapTimer; // Timer to resolve tap conflicts
+  int _tapCount = 0;
+
   Future<void> _startListening() async {
-    if (_isListening) return; // Prevent starting listening if already listening
+    if (_isListening) return;
 
     setState(() {
       _isListening = true;
-      buttonColor = Colors.blue; // Change to blue while listening
-      buttonText = "Listening..."; // Change text to "Listening..."
-      _circleSize = 150.0; // Increase circle size when listening
+      buttonColor = Colors.blue;
+      buttonText = "Listening...";
+      _circleSize = 150.0;
     });
 
     print("[UI] Starting voice command...");
     final result = await _intentService.listenAndClassify();
+
     if (result == null) {
       print("[UI] No intent detected.");
     } else {
       print("[UI] Detected intent: ${result.intent}, Sentence: ${result.raw}");
-
       if (result.intent == IntentType.navigate && result.destination != null) {
         final confirm =
             await _confirmationHandler.confirmDestination(result.destination!);
@@ -47,13 +50,25 @@ class _IntentListenerWidgetState extends State<IntentListenerWidget> {
       }
     }
 
-    // Reset state after listening
     setState(() {
       _isListening = false;
-      buttonColor = Colors.green; // Reset to original color
-      buttonText = "Start Voice Command"; // Reset to original text
-      _circleSize = 100.0; // Reset to original size
+      buttonColor = Colors.green;
+      buttonText = "Start Voice Command";
+      _circleSize = 100.0;
     });
+  }
+
+  void _handleTapCount(int count) {
+    if (count == 3) {
+      print('[UI] Triple tap detected. Triggering SOS.');
+      SOSService.instance.triggerSOS();
+    } else if (count == 2) {
+      print('[UI] Double tap detected. Starting voice command.');
+      _startListening();
+    } else if (count == 1) {
+      print('[UI] Single tap detected. Starting voice command.');
+      _startListening();
+    }
   }
 
   @override
@@ -65,13 +80,13 @@ class _IntentListenerWidgetState extends State<IntentListenerWidget> {
                 SerialTapGestureRecognizer.new,
                 (SerialTapGestureRecognizer instance) {
           instance.onSerialTapDown = (SerialTapDownDetails details) {
-            if (details.count == 3) {
-              print('[UI] Triple tap detected. Triggering SOS.');
-              SOSService.instance.triggerSOS();
-            } else if (details.count == 2) {
-              print('[UI] Double tap detected. Starting voice command.');
-              _startListening();
-            }
+            _tapCount = details.count;
+
+            _tapTimer?.cancel(); // Cancel existing timer
+            _tapTimer = Timer(const Duration(milliseconds: 300), () {
+              _handleTapCount(_tapCount);
+              _tapCount = 0;
+            });
           };
         }),
       },
@@ -83,18 +98,18 @@ class _IntentListenerWidgetState extends State<IntentListenerWidget> {
             _startListening();
           },
           child: AnimatedContainer(
-            duration: const Duration(milliseconds: 300), // Animation duration
+            duration: const Duration(milliseconds: 300),
             width: _circleSize,
             height: _circleSize,
             decoration: BoxDecoration(
-              color: buttonColor, // Change color while listening
+              color: buttonColor,
               shape: BoxShape.circle,
             ),
             alignment: Alignment.center,
             child: Text(
               "$buttonText",
               textAlign: TextAlign.center,
-              style: TextStyle(
+              style: const TextStyle(
                 color: Colors.white,
                 fontWeight: FontWeight.bold,
                 fontSize: 16,
@@ -104,5 +119,11 @@ class _IntentListenerWidgetState extends State<IntentListenerWidget> {
         ),
       ),
     );
+  }
+
+  @override
+  void dispose() {
+    _tapTimer?.cancel();
+    super.dispose();
   }
 }

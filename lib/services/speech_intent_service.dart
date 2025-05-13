@@ -157,10 +157,22 @@ class SpeechIntentService {
   bool _matchesSOS(String sentence) {
     const emergencyKeywords = [
       "help",
+      "danger",
+      "need help",
+      "i need help",
+      "help me",
+      "i'm in danger",
       "emergency",
       "call 112",
       "emergency services",
-      "urgent"
+      "urgent",
+      "someone rescue me",
+      "rescue me",
+      "someone help me",
+      "i'm lost",
+      "i'm in trouble",
+      "i need assistance",
+      "save me"
     ];
     return emergencyKeywords.any((p) => sentence.contains(p));
   }
