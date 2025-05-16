@@ -1,14 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:sensor_demo/screens/intent_listener_widget.dart';
+import 'package:sensor_demo/screens/map_screen.dart';
 import 'screens/camera_screen/camera_screen.dart';
-import 'screens/map_screen/map_screen.dart';
 import 'screens/sensor_screen/sensor_screen.dart';
 import 'package:camera/camera.dart';
 import 'screens/yoloe_screen/websocket_client_yoloe.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-
+  await dotenv.load(fileName: ".env");
   runApp(const MyApp());
 }
 
@@ -62,20 +63,19 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
-  List<Widget> get _pages => <Widget>[
-        // const SensorScreen(),
-        const IntentListenerWidget(),
-        _cameras.isNotEmpty
-            ? YoloDetectionApp(cameras: _cameras)
-            : const Center(child: CircularProgressIndicator()),
-        const MapScreen(),
-      ];
+  // List<Widget> get _pages => <Widget>[
+  //       // const SensorScreen(),
+  //       // const IntentListenerWidget(),
+  //       _cameras.isNotEmpty
+  //           ? YoloDetectionApp(cameras: _cameras)
+  //           : const Center(child: CircularProgressIndicator()),
+  //     ];
 
-  void _onItemTapped(int index) {
-    setState(() {
-      _selectedIndex = index;
-    });
-  }
+  // void _onItemTapped(int index) {
+  //   setState(() {
+  //     _selectedIndex = index;
+  //   });
+  // }
 
   @override
   Widget build(BuildContext context) {
@@ -85,30 +85,31 @@ class _HomePageState extends State<HomePage> {
         backgroundColor: const Color(0xFF0A192F),
         foregroundColor: Colors.white,
       ),
-      body: Center(
-        child: _pages.elementAt(_selectedIndex),
-      ),
-      bottomNavigationBar: BottomNavigationBar(
-        items: const <BottomNavigationBarItem>[
-          BottomNavigationBarItem(
-            icon: Icon(Icons.directions_run),
-            label: 'Movement',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.camera),
-            label: 'Camera',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.map),
-            label: 'Map',
-          ),
-        ],
-        currentIndex: _selectedIndex,
-        selectedItemColor: Colors.blue,
-        backgroundColor: const Color(0xFF0A192F),
-        unselectedItemColor: Colors.white70,
-        onTap: _onItemTapped,
-      ),
+      body: MapScreen(),
+      // body: Center(
+      //   child: _pages.elementAt(_selectedIndex),
+      // ),
+      // bottomNavigationBar: BottomNavigationBar(
+      //   items: const <BottomNavigationBarItem>[
+      //     // BottomNavigationBarItem(
+      //     //   icon: Icon(Icons.directions_run),
+      //     //   label: 'Movement',
+      //     // ),
+      //     BottomNavigationBarItem(
+      //       icon: Icon(Icons.camera),
+      //       label: 'Camera',
+      //     ),
+      //     BottomNavigationBarItem(
+      //       icon: Icon(Icons.map),
+      //       label: 'Map',
+      //     ),
+      //   ],
+      //   currentIndex: _selectedIndex,
+      //   selectedItemColor: Colors.blue,
+      //   backgroundColor: const Color(0xFF0A192F),
+      //   unselectedItemColor: Colors.white70,
+      //   onTap: _onItemTapped,
+      // ),
     );
   }
 }
