@@ -1,6 +1,6 @@
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
-import 'package:sensor_demo/services/sensor_service/human_orientation_service.dart';
+import 'package:MAV/services/sensor_service/human_orientation_service.dart';
 import 'package:vibration/vibration.dart';
 
 class CameraPreviewPage extends StatefulWidget {

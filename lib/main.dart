@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:sensor_demo/screens/intent_listener_widget.dart';
-import 'package:sensor_demo/screens/map_screen.dart';
+import 'package:MAV/screens/intent_listener_widget.dart';
+import 'package:MAV/screens/map_screen.dart';
 import 'screens/camera_screen/camera_screen.dart';
-import 'screens/sensor_screen/sensor_screen.dart';
+import 'screens/sensor_screen/device_orientation.dart';
 import 'package:camera/camera.dart';
 import 'screens/yoloe_screen/websocket_client_yoloe.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
@@ -44,7 +44,7 @@ class HomePage extends StatefulWidget {
 }
 
 class _HomePageState extends State<HomePage> {
-  int _selectedIndex = 0;
+  final int _selectedIndex = 0;
 
   late List<CameraDescription> _cameras = [];
 

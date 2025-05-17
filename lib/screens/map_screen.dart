@@ -648,7 +648,7 @@ class _MapScreenState extends State<MapScreen> {
             right: 20,
             child: Container(
               decoration: BoxDecoration(
-                color: Colors.white,
+                color: const Color.fromARGB(255, 255, 255, 255),
                 borderRadius: BorderRadius.circular(8),
                 boxShadow: [
                   BoxShadow(
@@ -661,6 +661,7 @@ class _MapScreenState extends State<MapScreen> {
               ),
               child: TextField(
                 controller: _searchController,
+                style: const TextStyle(color: Color.fromARGB(255, 0, 0, 0)), 
                 decoration: InputDecoration(
                   hintText: 'Search places...',
                   prefixIcon: const Icon(Icons.search),
@@ -831,7 +832,7 @@ class _MapScreenState extends State<MapScreen> {
                               Container(
                                 padding: const EdgeInsets.all(4),
                                 decoration: BoxDecoration(
-                                  color: Colors.white,
+                                  color: const Color.fromARGB(255, 0, 0, 0),
                                   borderRadius: BorderRadius.circular(12),
                                 ),
                                 child: Text(
@@ -847,7 +848,7 @@ class _MapScreenState extends State<MapScreen> {
                                 child: Text(
                                   _currentInstructionText,
                                   style: const TextStyle(
-                                      color: Colors.white,
+                                      color: Color.fromARGB(255, 0, 0, 0),
                                       fontWeight: FontWeight.w500),
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
