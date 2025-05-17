@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_polyline_points/flutter_polyline_points.dart';
 import 'package:geolocator/geolocator.dart';
@@ -33,6 +34,31 @@ class MapService {
         onLocationUpdate(LatLng(position.latitude, position.longitude));
       }
     });
+  }
+
+  /// Fetches the current location
+  static Future<LatLng?> getCurrentLocation() async {
+    try {
+      LocationPermission permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+        if (permission == LocationPermission.denied) {
+          debugPrint("Location permission denied");
+          return null;
+        }
+      }
+
+      if (permission == LocationPermission.deniedForever) return null;
+
+      final position = await Geolocator.getCurrentPosition(
+        desiredAccuracy: LocationAccuracy.high,
+      );
+
+      return LatLng(position.latitude, position.longitude);
+    } catch (e) {
+      debugPrint('Error getting current location: $e');
+      return null;
+    }
   }
 
   /// Fetches route polyline between two points
@@ -237,7 +263,6 @@ class MapService {
   }
 
   /// Gets details for a selected place using its place_id
-  // In getPlaceDetails method:
   static Future<LatLng?> getPlaceDetails(String placeId) async {
     if (_googleApiKey.isEmpty) {
       debugPrint('MapService: API key is empty!');
@@ -283,6 +308,73 @@ class MapService {
       debugPrint('MapService: Error getting place details: $e');
       return null;
     }
+  }
+
+  /// Calculate distance between two LatLng points
+  static double calculateDistance(LatLng point1, LatLng point2) {
+    return Geolocator.distanceBetween(
+        point1.latitude, point1.longitude, point2.latitude, point2.longitude);
+  }
+
+  /// Format distance in meters to readable format
+  static String formatDistance(double distanceInMeters) {
+    if (distanceInMeters < 1000) {
+      return '${distanceInMeters.round()} m';
+    } else {
+      return '${(distanceInMeters / 1000).toStringAsFixed(1)} km';
+    }
+  }
+
+  /// Calculate bearing between two points
+  static double calculateBearing(LatLng from, LatLng to) {
+    return Geolocator.bearingBetween(
+      from.latitude,
+      from.longitude,
+      to.latitude,
+      to.longitude,
+    );
+  }
+
+  /// Check if we've reached destination (within specified radius)
+  static bool hasReachedDestination(LatLng current, LatLng destination,
+      {double radius = 20}) {
+    final distance = calculateDistance(current, destination);
+    return distance < radius;
+  }
+
+  /// Check if we've reached the end of a step
+  static bool hasReachedStepEnd(LatLng current, LatLng stepEnd,
+      {double radius = 20}) {
+    final distance = calculateDistance(current, stepEnd);
+    return distance < radius;
+  }
+
+  /// Check if approaching next turn
+  static bool isApproachingTurn(LatLng current, LatLng turnPoint,
+      {double distance = 100}) {
+    final distanceToTurn = calculateDistance(current, turnPoint);
+    return distanceToTurn < distance;
+  }
+
+  /// Calculate the total remaining distance through all steps
+  static double calculateTotalRemainingDistance(LatLng currentPosition,
+      List<NavigationStep> steps, int currentStepIndex) {
+    if (steps.isEmpty || currentStepIndex >= steps.length) {
+      return 0.0;
+    }
+
+    double totalDistance = 0.0;
+
+    // Add distance from current position to the start of current step
+    totalDistance += calculateDistance(
+        currentPosition, steps[currentStepIndex].startLocation);
+
+    // Add distances of all remaining steps
+    for (int i = currentStepIndex; i < steps.length; i++) {
+      totalDistance += steps[i].distanceValue;
+    }
+
+    return totalDistance;
   }
 }
 

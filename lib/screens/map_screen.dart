@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
-import 'package:geolocator/geolocator.dart';
 import '../services/map_service.dart';
 
 class MapScreen extends StatefulWidget {
@@ -50,56 +49,42 @@ class _MapScreenState extends State<MapScreen> {
 
   Future<void> _getCurrentLocation() async {
     try {
-      // Request permission first
-      LocationPermission permission = await Geolocator.checkPermission();
-      if (permission == LocationPermission.denied) {
-        permission = await Geolocator.requestPermission();
-        if (permission == LocationPermission.denied) {
-          debugPrint("Location permission denied");
-          setState(() => _isLoading = false);
-          return;
-        }
-      }
+      final position = await MapService.getCurrentLocation();
 
-      // Get current position
-      final position = await Geolocator.getCurrentPosition(
-        desiredAccuracy: LocationAccuracy.high,
-      );
-
-      final latLng = LatLng(position.latitude, position.longitude);
-
-      if (mounted) {
+      if (position != null && mounted) {
         setState(() {
-          _currentPosition = latLng;
+          _currentPosition = position;
           _isLoading = false;
           _updateMarkers();
         });
 
-        await _cameraToPosition(latLng);
-      }
+        await _cameraToPosition(position);
 
-      // Set up location updates
-      Geolocator.getPositionStream(
-        locationSettings: const LocationSettings(
-          accuracy: LocationAccuracy.high,
-          distanceFilter: 10,
-        ),
-      ).listen((Position newPosition) {
+        // Set up location updates
+        MapService.getLocationUpdates(
+          onLocationUpdate: (LatLng newPosition) {
+            if (mounted) {
+              setState(() {
+                _currentPosition = newPosition;
+                _updateMarkers();
+              });
+
+              // Only update camera if not navigating to avoid disrupting navigation view
+              if (!_isNavigating) {
+                _cameraToPosition(newPosition);
+              } else {
+                _updateNavigationCamera();
+              }
+            }
+          },
+        );
+      } else {
         if (mounted) {
-          final newLatLng = LatLng(newPosition.latitude, newPosition.longitude);
           setState(() {
-            _currentPosition = newLatLng;
-            _updateMarkers();
+            _isLoading = false;
           });
-
-          // Only update camera if not navigating to avoid disrupting navigation view
-          if (!_isNavigating) {
-            _cameraToPosition(newLatLng);
-          } else {
-            _updateNavigationCamera();
-          }
         }
-      });
+      }
     } catch (e) {
       debugPrint('Error getting location: $e');
       if (mounted) {
@@ -128,7 +113,6 @@ class _MapScreenState extends State<MapScreen> {
     }
   }
 
-  // Add this method to handle search and display suggestions
   void _searchPlaces(String input) {
     // Clear previous timer if it exists
     if (_debounce?.isActive ?? false) _debounce!.cancel();
@@ -168,7 +152,6 @@ class _MapScreenState extends State<MapScreen> {
     });
   }
 
-  // Method to handle when a suggestion is selected
   Future<void> _handleSuggestionTap(PlaceSuggestion suggestion) async {
     setState(() {
       _isSearching = true;
@@ -213,21 +196,8 @@ class _MapScreenState extends State<MapScreen> {
     }
   }
 
-  // Method to update markers on the map
   void _updateMarkers() {
     _markers = {};
-
-    // Add current location marker
-    // if (_currentPosition != null) {
-    //   _markers.add(
-    //     Marker(
-    //       markerId: const MarkerId('current_location'),
-    //       position: _currentPosition!,
-    //       icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueBlue),
-    //       infoWindow: const InfoWindow(title: 'My Location'),
-    //     ),
-    //   );
-    // }
 
     // Add destination marker if available
     if (_destinationPosition != null) {
@@ -242,7 +212,6 @@ class _MapScreenState extends State<MapScreen> {
     }
   }
 
-  // Helper method to fit the map to show both origin and destination
   Future<void> _fitMapToShowRoute(LatLng origin, LatLng destination) async {
     try {
       final controller = await _mapController.future;
@@ -275,7 +244,6 @@ class _MapScreenState extends State<MapScreen> {
     }
   }
 
-  // Function to cancel the route
   void _cancelRoute() {
     debugPrint('MAP_NAV: Cancelling navigation');
 
@@ -306,7 +274,6 @@ class _MapScreenState extends State<MapScreen> {
     debugPrint('MAP_NAV: Navigation cancelled successfully');
   }
 
-  // Function to start navigation
   Future<void> _startNavigation() async {
     debugPrint('MAP_NAV: Starting navigation process');
     if (_currentPosition == null || _destinationPosition == null) {
@@ -331,7 +298,11 @@ class _MapScreenState extends State<MapScreen> {
       if (_navigationSteps.isNotEmpty) {
         _currentStepIndex = 0;
         _currentInstructionText = _navigationSteps[0].instruction;
-        _distanceToDestination = _calculateTotalRemainingDistance();
+        _distanceToDestination = MapService.calculateTotalRemainingDistance(
+          _currentPosition!,
+          _navigationSteps,
+          _currentStepIndex,
+        );
         _hasAnnouncedNextTurn = false;
 
         debugPrint('MAP_NAV: Initial instruction: $_currentInstructionText');
@@ -365,7 +336,6 @@ class _MapScreenState extends State<MapScreen> {
     }
   }
 
-  // Start location updates specifically for navigation
   void _startNavigationUpdates() {
     debugPrint('MAP_NAV: Starting location updates for navigation');
 
@@ -388,7 +358,8 @@ class _MapScreenState extends State<MapScreen> {
         }
 
         // Check if we've reached the destination (within 20 meters)
-        if (_distanceToDestination < 20) {
+        if (MapService.hasReachedDestination(
+            _currentPosition!, _destinationPosition!)) {
           debugPrint('MAP_NAV: DESTINATION REACHED!');
           _navigationArrived();
         }
@@ -422,50 +393,152 @@ class _MapScreenState extends State<MapScreen> {
     }
   }
 
-  // Update the distance to destination
   void _updateDistanceToDestination() {
     if (_currentPosition == null || _destinationPosition == null) return;
 
-    double distanceInMeters = Geolocator.distanceBetween(
-      _currentPosition!.latitude,
-      _currentPosition!.longitude,
-      _destinationPosition!.latitude,
-      _destinationPosition!.longitude,
-    );
+    double distanceInMeters =
+        MapService.calculateDistance(_currentPosition!, _destinationPosition!);
 
     setState(() {
       _distanceToDestination = distanceInMeters;
     });
   }
 
-  // Calculate the total remaining distance through all remaining steps
-  double _calculateTotalRemainingDistance() {
+  void _checkForStepProgress() {
+    debugPrint('MAP_NAV: Checking for step progress...');
     if (_navigationSteps.isEmpty ||
-        _currentStepIndex >= _navigationSteps.length) {
-      return 0.0;
+        _currentStepIndex >= _navigationSteps.length - 1) {
+      debugPrint('MAP_NAV: No more steps to check or empty steps list');
+      return;
     }
 
-    double totalDistance = 0.0;
+    // Get the end location of the current step
+    final LatLng endOfCurrentStep =
+        _navigationSteps[_currentStepIndex].endLocation;
 
-    // Add distance from current position to the start of current step
-    if (_currentPosition != null) {
-      totalDistance += Geolocator.distanceBetween(
-        _currentPosition!.latitude,
-        _currentPosition!.longitude,
-        _navigationSteps[_currentStepIndex].startLocation.latitude,
-        _navigationSteps[_currentStepIndex].startLocation.longitude,
-      );
+    // Calculate distance to the end of the current step
+    double distanceToEndOfStep =
+        MapService.calculateDistance(_currentPosition!, endOfCurrentStep);
+
+    debugPrint(
+        'MAP_NAV: Distance to end of step ${_currentStepIndex + 1}: ${distanceToEndOfStep.toStringAsFixed(2)}m');
+
+    // Announce upcoming turn when approaching it (100m before the turn)
+    if (MapService.isApproachingTurn(_currentPosition!, endOfCurrentStep) &&
+        !_hasAnnouncedNextTurn &&
+        _currentStepIndex < _navigationSteps.length - 1) {
+      debugPrint('MAP_NAV: Approaching turn, announcing next direction');
+      _hasAnnouncedNextTurn = true;
+      _announceNextTurn();
     }
 
-    // Add distances of all remaining steps
-    for (int i = _currentStepIndex; i < _navigationSteps.length; i++) {
-      totalDistance += _navigationSteps[i].distanceValue;
+    // If we're close to the end of the current step, move to the next one
+    if (MapService.hasReachedStepEnd(_currentPosition!, endOfCurrentStep)) {
+      debugPrint(
+          'MAP_NAV: Reached end of step ${_currentStepIndex + 1}, advancing to next step');
+      setState(() {
+        _currentStepIndex++;
+        if (_currentStepIndex < _navigationSteps.length) {
+          _currentInstructionText =
+              _navigationSteps[_currentStepIndex].instruction;
+          _showNavigationInstruction(isNewStep: true);
+          _hasAnnouncedNextTurn = false;
+        }
+      });
     }
-
-    return totalDistance;
   }
 
-  // Update the navigation camera dynamically during navigation
+  void _announceNextTurn() {
+    if (_currentStepIndex >= _navigationSteps.length - 1) return;
+
+    final nextStep = _navigationSteps[_currentStepIndex + 1];
+    final instruction = nextStep.instruction;
+
+    debugPrint('MAP_NAV: ANNOUNCEMENT - ${instruction.toUpperCase()}');
+
+    ScaffoldMessenger.of(context).hideCurrentSnackBar();
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Row(
+          children: [
+            const Icon(Icons.volume_up, color: Colors.white),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                'Upcoming: $instruction',
+                style: const TextStyle(fontWeight: FontWeight.bold),
+              ),
+            ),
+          ],
+        ),
+        backgroundColor: Colors.orange,
+        duration: const Duration(seconds: 3),
+      ),
+    );
+  }
+
+  void _showNavigationInstruction({bool isNewStep = false}) {
+    if (!_isNavigating ||
+        _navigationSteps.isEmpty ||
+        _currentStepIndex >= _navigationSteps.length) {
+      debugPrint('MAP_NAV: Cannot show instruction - invalid state');
+      return;
+    }
+
+    final step = _navigationSteps[_currentStepIndex];
+    debugPrint(
+        'MAP_NAV: Showing instruction for step ${_currentStepIndex + 1}: ${step.instruction}');
+
+    // Only show snackbar for new steps
+    if (isNewStep) {
+      ScaffoldMessenger.of(context).hideCurrentSnackBar();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                step.instruction,
+                style: const TextStyle(fontWeight: FontWeight.bold),
+              ),
+              Text('${step.distance} • ${step.duration}'),
+            ],
+          ),
+          backgroundColor: Colors.blue.shade700,
+          duration: const Duration(seconds: 4),
+        ),
+      );
+
+      debugPrint('MAP_NAV: VOICE GUIDANCE - ${step.instruction.toUpperCase()}');
+    }
+  }
+
+  void _navigationArrived() {
+    // Cancel navigation timer
+    if (_navigationTimer != null) {
+      _navigationTimer!.cancel();
+      _navigationTimer = null;
+    }
+
+    setState(() {
+      _isNavigating = false;
+    });
+
+    // Show arrival message
+    ScaffoldMessenger.of(context).hideCurrentSnackBar();
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('You have arrived at your destination!'),
+        backgroundColor: Colors.green,
+      ),
+    );
+  }
+
+  String getFormattedRemainingDistance() {
+    return MapService.formatDistance(_distanceToDestination);
+  }
+
   Future<void> _updateNavigationCamera() async {
     if (!_isNavigating || _currentPosition == null) return;
 
@@ -477,12 +550,7 @@ class _MapScreenState extends State<MapScreen> {
       if (_currentStepIndex < _navigationSteps.length) {
         final targetPoint = _navigationSteps[_currentStepIndex].endLocation;
 
-        bearing = Geolocator.bearingBetween(
-          _currentPosition!.latitude,
-          _currentPosition!.longitude,
-          targetPoint.latitude,
-          targetPoint.longitude,
-        );
+        bearing = MapService.calculateBearing(_currentPosition!, targetPoint);
 
         debugPrint('MAP_NAV: Camera bearing to next step: $bearing');
       }
@@ -521,158 +589,6 @@ class _MapScreenState extends State<MapScreen> {
     }
   }
 
-  // Check if we should progress to the next navigation step
-  void _checkForStepProgress() {
-    debugPrint('MAP_NAV: Checking for step progress...');
-    if (_navigationSteps.isEmpty ||
-        _currentStepIndex >= _navigationSteps.length - 1) {
-      debugPrint('MAP_NAV: No more steps to check or empty steps list');
-      return;
-    }
-
-    // Get the end location of the current step
-    final LatLng endOfCurrentStep =
-        _navigationSteps[_currentStepIndex].endLocation;
-
-    // Calculate distance to the end of the current step
-    double distanceToEndOfStep = Geolocator.distanceBetween(
-      _currentPosition!.latitude,
-      _currentPosition!.longitude,
-      endOfCurrentStep.latitude,
-      endOfCurrentStep.longitude,
-    );
-
-    debugPrint(
-        'MAP_NAV: Distance to end of step ${_currentStepIndex + 1}: ${distanceToEndOfStep.toStringAsFixed(2)}m');
-
-    // Announce upcoming turn when approaching it (100m before the turn)
-    if (distanceToEndOfStep < 100 &&
-        !_hasAnnouncedNextTurn &&
-        _currentStepIndex < _navigationSteps.length - 1) {
-      debugPrint('MAP_NAV: Approaching turn, announcing next direction');
-      _hasAnnouncedNextTurn = true;
-      _announceNextTurn();
-    }
-
-    // If we're close to the end of the current step, move to the next one
-    if (distanceToEndOfStep < 20) {
-      debugPrint(
-          'MAP_NAV: Reached end of step ${_currentStepIndex + 1}, advancing to next step');
-      setState(() {
-        _currentStepIndex++;
-        if (_currentStepIndex < _navigationSteps.length) {
-          _currentInstructionText =
-              _navigationSteps[_currentStepIndex].instruction;
-          _showNavigationInstruction(isNewStep: true);
-          _hasAnnouncedNextTurn = false;
-        }
-      });
-    }
-  }
-
-  // Add this method to announce upcoming turns
-  void _announceNextTurn() {
-    if (_currentStepIndex >= _navigationSteps.length - 1) return;
-
-    final nextStep = _navigationSteps[_currentStepIndex + 1];
-    final instruction = nextStep.instruction;
-
-    debugPrint('MAP_NAV: ANNOUNCEMENT - ${instruction.toUpperCase()}');
-
-    // Here you would typically use text-to-speech to announce the turn
-    // For now, we'll just show a special snackbar
-
-    ScaffoldMessenger.of(context).hideCurrentSnackBar();
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Row(
-          children: [
-            const Icon(Icons.volume_up, color: Colors.white),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Text(
-                'Upcoming: $instruction',
-                style: const TextStyle(fontWeight: FontWeight.bold),
-              ),
-            ),
-          ],
-        ),
-        backgroundColor: Colors.orange,
-        duration: const Duration(seconds: 3),
-      ),
-    );
-  }
-
-  // Update the _showNavigationInstruction method
-  void _showNavigationInstruction({bool isNewStep = false}) {
-    if (!_isNavigating ||
-        _navigationSteps.isEmpty ||
-        _currentStepIndex >= _navigationSteps.length) {
-      debugPrint('MAP_NAV: Cannot show instruction - invalid state');
-      return;
-    }
-
-    final step = _navigationSteps[_currentStepIndex];
-    debugPrint(
-        'MAP_NAV: Showing instruction for step ${_currentStepIndex + 1}: ${step.instruction}');
-
-    // Only show snackbar for new steps
-    if (isNewStep) {
-      ScaffoldMessenger.of(context).hideCurrentSnackBar();
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                step.instruction,
-                style: const TextStyle(fontWeight: FontWeight.bold),
-              ),
-              Text('${step.distance} • ${step.duration}'),
-            ],
-          ),
-          backgroundColor: Colors.blue.shade700,
-          duration: const Duration(seconds: 4),
-        ),
-      );
-
-      // In a real app, you would use text-to-speech here to announce the instruction
-      debugPrint('MAP_NAV: VOICE GUIDANCE - ${step.instruction.toUpperCase()}');
-    }
-  }
-
-  // Handle arrival at destination
-  void _navigationArrived() {
-    // Cancel navigation timer
-    if (_navigationTimer != null) {
-      _navigationTimer!.cancel();
-      _navigationTimer = null;
-    }
-
-    setState(() {
-      _isNavigating = false;
-    });
-
-    // Show arrival message
-    ScaffoldMessenger.of(context).hideCurrentSnackBar();
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('You have arrived at your destination!'),
-        backgroundColor: Colors.green,
-      ),
-    );
-  }
-
-  // Get the formatted remaining distance
-  String getFormattedRemainingDistance() {
-    if (_distanceToDestination < 1000) {
-      return '${_distanceToDestination.round()} m';
-    } else {
-      return '${(_distanceToDestination / 1000).toStringAsFixed(1)} km';
-    }
-  }
-
   Future<void> _cameraToPosition(LatLng position) async {
     try {
       final controller = await _mapController.future;
@@ -700,8 +616,15 @@ class _MapScreenState extends State<MapScreen> {
                   : GoogleMap(
                       onMapCreated: (controller) {
                         debugPrint('MAP_SCREEN: Map created');
-                        if (!_mapController.isCompleted) {
-                          _mapController.complete(controller);
+                        try {
+                          if (!_mapController.isCompleted) {
+                            _mapController.complete(controller);
+                            debugPrint(
+                                'MAP_SCREEN: Controller completed successfully');
+                          }
+                        } catch (e) {
+                          debugPrint(
+                              'MAP_SCREEN: Error completing controller: $e');
                         }
                       },
                       initialCameraPosition:
@@ -845,13 +768,13 @@ class _MapScreenState extends State<MapScreen> {
                             child: Text(
                               _searchController.text,
                               style: TextStyle(
-                                fontWeight: FontWeight.bold,
+                                fontWeight: FontWeight.w600,
                                 fontSize: 16,
                                 color: _isNavigating
                                     ? Colors.white
                                     : Colors.black87,
                               ),
-                              maxLines: 1,
+                              maxLines: 3,
                               overflow: TextOverflow.ellipsis,
                             ),
                           ),
@@ -926,7 +849,7 @@ class _MapScreenState extends State<MapScreen> {
                                   style: const TextStyle(
                                       color: Colors.white,
                                       fontWeight: FontWeight.w500),
-                                  maxLines: 2,
+                                  maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
                                 ),
                               ),
