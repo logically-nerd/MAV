@@ -6,6 +6,8 @@ import 'screens/sensor_screen/device_orientation.dart';
 import 'package:camera/camera.dart';
 import 'screens/yoloe_screen/websocket_client_yoloe.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'package:google_fonts/google_fonts.dart';
+import 'dart:ui';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -24,11 +26,9 @@ class MyApp extends StatelessWidget {
       theme: ThemeData(
         primarySwatch: Colors.blue,
         useMaterial3: true,
-        scaffoldBackgroundColor: const Color(0xFF0A192F),
-        textTheme: const TextTheme(
-          bodyLarge: TextStyle(color: Colors.white),
-          bodyMedium: TextStyle(color: Colors.white),
-          titleLarge: TextStyle(color: Colors.white),
+        colorScheme: ColorScheme.fromSeed(
+          seedColor: Colors.blueAccent,
+          brightness: Brightness.light,
         ),
       ),
       home: const HomePage(),
@@ -44,8 +44,6 @@ class HomePage extends StatefulWidget {
 }
 
 class _HomePageState extends State<HomePage> {
-  final int _selectedIndex = 0;
-
   late List<CameraDescription> _cameras = [];
 
   @override
@@ -63,53 +61,53 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
-  // List<Widget> get _pages => <Widget>[
-  //       // const SensorScreen(),
-  //       // const IntentListenerWidget(),
-  //       _cameras.isNotEmpty
-  //           ? YoloDetectionApp(cameras: _cameras)
-  //           : const Center(child: CircularProgressIndicator()),
-  //     ];
-
-  // void _onItemTapped(int index) {
-  //   setState(() {
-  //     _selectedIndex = index;
-  //   });
-  // }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('MAV'),
-        backgroundColor: const Color(0xFF0A192F),
-        foregroundColor: Colors.white,
-      ),
-      body: MapScreen(),
-      // body: Center(
-      //   child: _pages.elementAt(_selectedIndex),
-      // ),
-      // bottomNavigationBar: BottomNavigationBar(
-      //   items: const <BottomNavigationBarItem>[
-      //     // BottomNavigationBarItem(
-      //     //   icon: Icon(Icons.directions_run),
-      //     //   label: 'Movement',
-      //     // ),
-      //     BottomNavigationBarItem(
-      //       icon: Icon(Icons.camera),
-      //       label: 'Camera',
-      //     ),
-      //     BottomNavigationBarItem(
-      //       icon: Icon(Icons.map),
-      //       label: 'Map',
-      //     ),
-      //   ],
-      //   currentIndex: _selectedIndex,
-      //   selectedItemColor: Colors.blue,
-      //   backgroundColor: const Color(0xFF0A192F),
-      //   unselectedItemColor: Colors.white70,
-      //   onTap: _onItemTapped,
-      // ),
-    );
+        appBar: AppBar(
+          title: Padding(
+            padding: const EdgeInsets.fromLTRB(6, 4, 0, 4),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.start,
+              spacing: 13,
+              children: [
+                Text(
+                  'MAV',
+                  style: GoogleFonts.tektur(
+                    fontSize: 30,
+                    fontWeight: FontWeight.bold,
+                    color: const Color.fromARGB(215, 255, 255, 255),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          backgroundColor: Colors.blueAccent,
+        ),
+        // body: MapScreen(),
+        body: Stack(
+          children: [
+            const MapScreen(),
+            Positioned(
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              child: Center(
+                child: ClipRect(
+                  child: BackdropFilter(
+                    filter: ImageFilter.blur(sigmaX: 0.5, sigmaY: 0.5),
+                    child: Container(
+                      width: double.infinity,
+                      height: double.infinity,
+                      color: Colors.black.withAlpha(10),
+                      child: const IntentListenerWidget(),
+                    ),
+                  ),
+                ),
+              ),
+            )
+          ],
+        ));
   }
 }

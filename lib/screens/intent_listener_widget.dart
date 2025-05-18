@@ -1,8 +1,7 @@
-import 'dart:async'; // Add this for Timer
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/gestures.dart';
-import '../services/conversation_service/speech_intent_service.dart';
-import '../services/conversation_service/confirmation_handler.dart';
+import '../services/conversation_service/conversation_service.dart';
 import '../services/conversation_service/sos_service.dart';
 
 class IntentListenerWidget extends StatefulWidget {
@@ -13,8 +12,7 @@ class IntentListenerWidget extends StatefulWidget {
 }
 
 class _IntentListenerWidgetState extends State<IntentListenerWidget> {
-  final _intentService = SpeechIntentService.instance;
-  final _confirmationHandler = ConfirmationHandler();
+  final _conversationService = ConversationService.instance;
   bool _isListening = false;
   double _circleSize = 100.0;
   Color buttonColor = Colors.green;
@@ -22,6 +20,17 @@ class _IntentListenerWidgetState extends State<IntentListenerWidget> {
 
   Timer? _tapTimer; // Timer to resolve tap conflicts
   int _tapCount = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _preloadServices();
+  }
+
+  Future<void> _preloadServices() async {
+    print('[UI] Preloading conversation services');
+    await _conversationService.preload();
+  }
 
   Future<void> _startListening() async {
     if (_isListening) return;
@@ -34,21 +43,7 @@ class _IntentListenerWidgetState extends State<IntentListenerWidget> {
     });
 
     print("[UI] Starting voice command...");
-    final result = await _intentService.listenAndClassify();
-
-    if (result == null) {
-      print("[UI] No intent detected.");
-    } else {
-      print("[UI] Detected intent: ${result.intent}, Sentence: ${result.raw}");
-      if (result.intent == IntentType.navigate && result.destination != null) {
-        final confirm =
-            await _confirmationHandler.confirmDestination(result.destination!);
-        print("[UI] Confirmed navigation: $confirm");
-      } else if (result.intent == IntentType.awareness) {
-        final confirm = await _confirmationHandler.confirmAwareness();
-        print("[UI] Confirmed awareness: $confirm");
-      }
-    }
+    await _conversationService.listenAndClassify();
 
     setState(() {
       _isListening = false;
@@ -102,7 +97,7 @@ class _IntentListenerWidgetState extends State<IntentListenerWidget> {
             width: _circleSize,
             height: _circleSize,
             decoration: BoxDecoration(
-              color: buttonColor,
+              color: buttonColor.withOpacity(0.3),
               shape: BoxShape.circle,
             ),
             alignment: Alignment.center,

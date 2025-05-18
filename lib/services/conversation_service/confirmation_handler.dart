@@ -64,7 +64,7 @@ class ConfirmationHandler {
     _speech.listen(
       listenMode: stt.ListenMode.confirmation,
       pauseFor: const Duration(seconds: 4),
-      listenFor: const Duration(seconds: 8),
+      listenFor: const Duration(seconds: 10),
       onResult: (result) {
         final transcript = result.recognizedWords.toLowerCase().trim();
         print("[Confirm] Heard: $transcript");

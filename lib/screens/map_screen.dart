@@ -1,7 +1,9 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter_tts/flutter_tts.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import '../services/map_service.dart';
+import '../services/conversation_service/navigation_handler.dart';
 
 class MapScreen extends StatefulWidget {
   const MapScreen({super.key});
@@ -33,10 +35,79 @@ class _MapScreenState extends State<MapScreen> {
   double _distanceToDestination = 0.0; // in meters
   bool _hasAnnouncedNextTurn = false;
 
+  final FlutterTts _tts = FlutterTts();
+
+  Future<void> _speakDirections(String instruction) async {
+    debugPrint('MAP_NAV: Speaking - $instruction');
+
+    try {
+      // Stop any previous speech
+      await _tts.stop();
+
+      // Add a small delay to ensure previous speech has stopped
+      await Future.delayed(const Duration(milliseconds: 100));
+
+      // Speak with error handling and result checking
+      int result = await _tts.speak(instruction);
+      debugPrint('MAP_NAV: TTS speak result: $result');
+
+      // Wait for speech to complete
+      await Future.delayed(
+          Duration(milliseconds: 500 + (instruction.length * 50)));
+    } catch (e) {
+      debugPrint('MAP_NAV: TTS error: $e');
+    }
+  }
+
   @override
   void initState() {
     super.initState();
     _getCurrentLocation();
+
+    // Initialize TTS with better error handling
+    _initializeTTS();
+
+    // Register callbacks with NavigationHandler
+    NavigationHandler.instance.registerCallbacks(
+      onDestinationFound: (location, name) {
+        print('MAP_SCREEN: Setting destination from voice command: $name');
+        setState(() {
+          _destinationPosition = location;
+          _searchController.text = name;
+          _updateMarkers();
+        });
+
+        if (_currentPosition != null) {
+          _loadRoute(_currentPosition!, location);
+          _fitMapToShowRoute(_currentPosition!, location);
+        }
+      },
+      onNavigationStart: () {
+        print('MAP_SCREEN: Starting navigation from voice command');
+        _startNavigation();
+      },
+    );
+  }
+
+  Future<void> _initializeTTS() async {
+    try {
+      await _tts.setLanguage("en-US");
+      await _tts.setSpeechRate(0.5); // Slower rate for better clarity
+      await _tts.setVolume(1.0); // Full volume
+      await _tts.setPitch(1.0); // Normal pitch
+      await _tts.awaitSpeakCompletion(true);
+
+      _tts.setCompletionHandler(() {
+        debugPrint('MAP_NAV: TTS completed');
+      });
+
+      // Test TTS initialization
+      debugPrint('MAP_NAV: Testing TTS...');
+      await _tts.speak("Navigation system initialized");
+      debugPrint('MAP_NAV: TTS test completed');
+    } catch (e) {
+      debugPrint('MAP_NAV: Error initializing TTS: $e');
+    }
   }
 
   @override
@@ -44,6 +115,7 @@ class _MapScreenState extends State<MapScreen> {
     _debounce?.cancel();
     _navigationTimer?.cancel();
     _searchController.dispose();
+    _tts.stop();
     super.dispose();
   }
 
@@ -453,6 +525,10 @@ class _MapScreenState extends State<MapScreen> {
 
     final nextStep = _navigationSteps[_currentStepIndex + 1];
     final instruction = nextStep.instruction;
+    final distance = nextStep.distance;
+
+    // Enhanced instruction with distance
+    final announcementText = "In $distance, $instruction";
 
     debugPrint('MAP_NAV: ANNOUNCEMENT - ${instruction.toUpperCase()}');
 
@@ -475,6 +551,7 @@ class _MapScreenState extends State<MapScreen> {
         duration: const Duration(seconds: 3),
       ),
     );
+    _speakDirections(announcementText);
   }
 
   void _showNavigationInstruction({bool isNewStep = false}) {
@@ -509,7 +586,7 @@ class _MapScreenState extends State<MapScreen> {
           duration: const Duration(seconds: 4),
         ),
       );
-
+      _speakDirections(step.instruction);
       debugPrint('MAP_NAV: VOICE GUIDANCE - ${step.instruction.toUpperCase()}');
     }
   }
@@ -533,6 +610,7 @@ class _MapScreenState extends State<MapScreen> {
         backgroundColor: Colors.green,
       ),
     );
+    _speakDirections("You have arrived at your destination");
   }
 
   String getFormattedRemainingDistance() {
@@ -661,7 +739,7 @@ class _MapScreenState extends State<MapScreen> {
               ),
               child: TextField(
                 controller: _searchController,
-                style: const TextStyle(color: Color.fromARGB(255, 0, 0, 0)), 
+                style: const TextStyle(color: Color.fromARGB(255, 0, 0, 0)),
                 decoration: InputDecoration(
                   hintText: 'Search places...',
                   prefixIcon: const Icon(Icons.search),

@@ -104,12 +104,17 @@ class MapService {
     required LatLng origin,
     required LatLng destination,
   }) async {
+    if (_googleApiKey.isEmpty) return [];
+
     try {
+      debugPrint(
+          'MapService: Fetching directions from $origin to $destination');
+
       final url = Uri.parse(
         'https://maps.googleapis.com/maps/api/directions/json'
         '?origin=${origin.latitude},${origin.longitude}'
         '&destination=${destination.latitude},${destination.longitude}'
-        '&mode=walking' // We're focusing on walking directions
+        '&mode=walking'
         '&key=$_googleApiKey',
       );
 
@@ -119,63 +124,56 @@ class MapService {
         final data = json.decode(response.body);
 
         if (data['status'] == 'OK') {
-          final routes = data['routes'] as List;
+          final List<NavigationStep> steps = [];
+          final leg = data['routes'][0]['legs'][0];
 
-          if (routes.isNotEmpty) {
-            final legs = routes[0]['legs'] as List;
+          // Get overall route data
+          final overview = {
+            'distance': leg['distance']['text'],
+            'duration': leg['duration']['text'],
+            'distance_value': leg['distance']['value'], // meters
+            'duration_value': leg['duration']['value'], // seconds
+          };
 
-            if (legs.isNotEmpty) {
-              final steps = legs[0]['steps'] as List;
+          debugPrint(
+              'MapService: Route overview: ${overview['distance']}, ${overview['duration']}');
 
-              List<NavigationStep> navigationSteps = [];
+          final rawSteps = leg['steps'] as List;
+          for (var step in rawSteps) {
+            final instruction = step['html_instructions']
+                .toString()
+                .replaceAll(RegExp(r'<[^>]*>'), ' ')
+                .replaceAll(RegExp(r'\s+'), ' ')
+                .trim();
 
-              for (final step in steps) {
-                final String htmlInstructions = step['html_instructions'];
-                // Clean HTML tags from instructions
-                final instruction = htmlInstructions
-                    .replaceAll(RegExp(r'<[^>]*>'), ' ')
-                    .replaceAll('&nbsp;', ' ')
-                    .replaceAll(RegExp(r'\s+'), ' ')
-                    .trim();
+            final startLocation = LatLng(
+              step['start_location']['lat'],
+              step['start_location']['lng'],
+            );
 
-                final distance = step['distance']['text'];
-                final distanceValue = step['distance']['value'] as int;
-                final duration = step['duration']['text'];
+            final endLocation = LatLng(
+              step['end_location']['lat'],
+              step['end_location']['lng'],
+            );
 
-                final startLocation = LatLng(
-                  step['start_location']['lat'],
-                  step['start_location']['lng'],
-                );
-
-                final endLocation = LatLng(
-                  step['end_location']['lat'],
-                  step['end_location']['lng'],
-                );
-
-                navigationSteps.add(
-                  NavigationStep(
-                    instruction: instruction,
-                    distance: distance,
-                    duration: duration,
-                    startLocation: startLocation,
-                    endLocation: endLocation,
-                    distanceValue: distanceValue,
-                  ),
-                );
-              }
-
-              return navigationSteps;
-            }
+            steps.add(NavigationStep(
+              instruction: instruction,
+              distance: step['distance']['text'],
+              duration: step['duration']['text'],
+              startLocation: startLocation,
+              endLocation: endLocation,
+              distanceValue: step['distance']['value'],
+              durationValue: step['duration']
+                  ['value'], // Add duration value in seconds
+            ));
           }
-        }
 
-        return [];
-      } else {
-        debugPrint('Error getting navigation steps: ${response.statusCode}');
-        return [];
+          return steps;
+        }
       }
+      return [];
     } catch (e) {
-      debugPrint('Exception getting navigation steps: $e');
+      debugPrint('Error getting navigation steps: $e');
       return [];
     }
   }
@@ -399,6 +397,7 @@ class NavigationStep {
   final LatLng startLocation;
   final LatLng endLocation;
   final int distanceValue;
+  final int? durationValue; // Add this field
 
   NavigationStep({
     required this.instruction,
@@ -407,5 +406,6 @@ class NavigationStep {
     required this.startLocation,
     required this.endLocation,
     required this.distanceValue,
+    this.durationValue,
   });
 }
