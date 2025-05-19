@@ -293,7 +293,18 @@ class ConversationService {
       "let's go to",
       "i want to go to",
       "move to",
-      "get to"
+      "get to",
+      // Additional phrases
+      "directions to",
+      "show me the way to",
+      "find",
+      "find me",
+      "how do i get to",
+      "guide me to",
+      "i need to get to",
+      "walk to",
+      "walking directions to",
+      "help me find",
     ];
     return keywords.any((k) => sentence.contains(k));
   }
@@ -327,7 +338,18 @@ class ConversationService {
       "take me to a different",
       "i want to go somewhere else",
       "navigate elsewhere",
-      "change route to"
+      "change route to",
+      // Additional phrases
+      "i changed my mind take me to",
+      "i want to go to another place",
+      "change to",
+      "go somewhere else",
+      "let's go somewhere else",
+      "actually take me to",
+      "actually i want to go to",
+      "instead take me to",
+      "on second thought take me to",
+      "new destination",
     ];
     return patterns.any((p) => sentence.contains(p));
   }
@@ -344,7 +366,7 @@ class ConversationService {
   String? _extractChangeDestination(String sentence) {
     // Try to extract destination from change destination phrases
     final regex = RegExp(
-      r"(change destination to|change my destination to|redirect to|switch destination to|change route to|take me to)\s+(.*)",
+      r"(change destination to|change my destination to|redirect to|switch destination to|change route to|take me to|i changed my mind take me to|actually take me to|instead take me to|on second thought take me to|new destination)\s+(.*)",
     );
     final match = regex.firstMatch(sentence);
     if (match != null) {

@@ -4,6 +4,7 @@ import 'package:flutter_tts/flutter_tts.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import '../services/map_service.dart';
 import '../services/conversation_service/navigation_handler.dart';
+import 'dart:math';
 
 class MapScreen extends StatefulWidget {
   const MapScreen({super.key});
@@ -41,6 +42,19 @@ class _MapScreenState extends State<MapScreen> {
   double _previousDistanceToDestination = 0.0;
   int _wrongDirectionCounter = 0;
   bool _hasWarnedWrongDirection = false;
+  int _wrongDirectionThreshold = 4; // Reduced from 5 to be more responsive
+  double _wrongDirectionMinDeviation =
+      2.0; // Minimum deviation in meters to count as wrong direction
+
+  // Add these variables to the class
+  bool _isOffRoute = false;
+  int _offRouteCounter = 0;
+  final int _offRouteThreshold = 6; // How many checks before rerouting
+  final double _offRouteDistance =
+      30.0; // Distance in meters to be considered off route
+
+  // Add this variable
+  bool _isMapInitialized = false;
 
   Future<void> _speakDirections(String instruction) async {
     debugPrint('MAP_NAV: Speaking - $instruction');
@@ -69,33 +83,11 @@ class _MapScreenState extends State<MapScreen> {
     super.initState();
     _getCurrentLocation();
 
-    // Initialize TTS with better error handling
-    _initializeTTS();
-
-    // Register callbacks with NavigationHandler
-    NavigationHandler.instance.registerCallbacks(
-      onDestinationFound: (location, name) {
-        print('MAP_SCREEN: Setting destination from voice command: $name');
-        setState(() {
-          _destinationPosition = location;
-          _searchController.text = name;
-          _updateMarkers();
-        });
-
-        if (_currentPosition != null) {
-          _loadRoute(_currentPosition!, location);
-          _fitMapToShowRoute(_currentPosition!, location);
-        }
-      },
-      onNavigationStart: () {
-        print('MAP_SCREEN: Starting navigation from voice command');
-        _startNavigation();
-      },
-      onNavigationStop: () {
-        print('MAP_SCREEN: Stopping navigation from voice command');
-        _cancelRoute();
-      },
-    );
+    // Wait to initialize navigation systems until map is ready
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      // Initialize TTS with better error handling
+      _initializeTTS();
+    });
   }
 
   Future<void> _initializeTTS() async {
@@ -110,10 +102,7 @@ class _MapScreenState extends State<MapScreen> {
         debugPrint('MAP_NAV: TTS completed');
       });
 
-      // Test TTS initialization
-      debugPrint('MAP_NAV: Testing TTS...');
-      await _tts.speak("Navigation system initialized");
-      debugPrint('MAP_NAV: TTS test completed');
+      debugPrint('MAP_NAV: TTS initialization complete');
     } catch (e) {
       debugPrint('MAP_NAV: Error initializing TTS: $e');
     }
@@ -437,6 +426,9 @@ class _MapScreenState extends State<MapScreen> {
         // Calculate distance to destination
         _updateDistanceToDestination();
 
+        // Check if we're off route
+        _checkIfOffRoute();
+
         // Only log every 2 seconds to avoid flooding logs
         if (_.tick % 4 == 0) {
           debugPrint(
@@ -489,23 +481,27 @@ class _MapScreenState extends State<MapScreen> {
     if (_previousDistanceToDestination > 0 &&
         distanceInMeters > _previousDistanceToDestination &&
         _isNavigating) {
+      // Calculate deviation - how much farther we've moved
+      double deviation = distanceInMeters - _previousDistanceToDestination;
+
       // Only increment counter if the difference is significant (to filter out GPS fluctuations)
-      if (distanceInMeters - _previousDistanceToDestination > 3.0) {
+      if (deviation > _wrongDirectionMinDeviation) {
         _wrongDirectionCounter++;
         debugPrint(
-            'MAP_NAV: Possible wrong direction detected. Counter: $_wrongDirectionCounter');
+            'MAP_NAV: Possible wrong direction detected. Counter: $_wrongDirectionCounter, Deviation: ${deviation.toStringAsFixed(2)}m');
       }
 
       // If we've detected consistent wrong movement and haven't warned
-      if (_wrongDirectionCounter >= 5 && !_hasWarnedWrongDirection) {
+      if (_wrongDirectionCounter >= _wrongDirectionThreshold &&
+          !_hasWarnedWrongDirection) {
         _warnWrongDirection();
         _hasWarnedWrongDirection = true;
 
         // Reset counter after warning
         _wrongDirectionCounter = 0;
 
-        // Schedule reset of warning flag after some time
-        Future.delayed(Duration(seconds: 30), () {
+        // Schedule reset of warning flag after some time (reduced to 20 seconds)
+        Future.delayed(Duration(seconds: 20), () {
           if (mounted) {
             setState(() {
               _hasWarnedWrongDirection = false;
@@ -518,6 +514,8 @@ class _MapScreenState extends State<MapScreen> {
       if (_wrongDirectionCounter > 0 &&
           distanceInMeters < _previousDistanceToDestination) {
         _wrongDirectionCounter = 0;
+        debugPrint(
+            'MAP_NAV: Back on the right track, reset wrong direction counter');
       }
     }
 
@@ -798,6 +796,165 @@ class _MapScreenState extends State<MapScreen> {
     NavigationHandler.instance.updateNavigationState(_isNavigating);
   }
 
+  void _checkIfOffRoute() {
+    if (!_isNavigating || _currentPosition == null || _navigationSteps.isEmpty)
+      return;
+
+    // Calculate deviation from current route
+    // For simplicity, we'll check distance to the next waypoint
+    if (_currentStepIndex < _navigationSteps.length) {
+      final currentStep = _navigationSteps[_currentStepIndex];
+
+      // Calculate the closest point on our current route segment
+      double distanceToRoute = _calculateDistanceToRouteSegment(
+          _currentPosition!,
+          currentStep.startLocation,
+          currentStep.endLocation);
+
+      if (distanceToRoute > _offRouteDistance) {
+        _offRouteCounter++;
+        debugPrint(
+            'MAP_NAV: Possibly off route. Counter: $_offRouteCounter, Distance from route: ${distanceToRoute.toStringAsFixed(2)}m');
+
+        // After several consistent off-route detections, trigger a reroute
+        if (_offRouteCounter >= _offRouteThreshold && !_isOffRoute) {
+          _isOffRoute = true;
+          _handleOffRouteRerouting();
+        }
+      } else {
+        // Reset the counter if we're back on route
+        if (_offRouteCounter > 0) {
+          _offRouteCounter = 0;
+          _isOffRoute = false;
+          debugPrint('MAP_NAV: Back on route, reset off-route counter');
+        }
+      }
+    }
+  }
+
+  double _calculateDistanceToRouteSegment(
+      LatLng position, LatLng segmentStart, LatLng segmentEnd) {
+    // Implementation using MapService.calculateDistance and vector math
+    // This is a simplified version - for a real app, consider using a library
+
+    // Calculate distance directly to both endpoints
+    double distanceToStart =
+        MapService.calculateDistance(position, segmentStart);
+    double distanceToEnd = MapService.calculateDistance(position, segmentEnd);
+
+    // Calculate the length of the segment
+    double segmentLength =
+        MapService.calculateDistance(segmentStart, segmentEnd);
+
+    // If segment is very short, just return distance to either endpoint
+    if (segmentLength < 5) {
+      return min(distanceToStart, distanceToEnd);
+    }
+
+    // Use the Pythagorean theorem to get approximate perpendicular distance
+    // This is a simplified calculation that works for short distances
+    double p = (distanceToStart + distanceToEnd + segmentLength) / 2;
+    double area = sqrt(
+        p * (p - distanceToStart) * (p - distanceToEnd) * (p - segmentLength));
+
+    return (2 * area) / segmentLength;
+  }
+
+  Future<void> _handleOffRouteRerouting() async {
+    if (!_isNavigating || _destinationPosition == null) return;
+
+    debugPrint('MAP_NAV: Handling off-route rerouting');
+
+    // Show notification to user
+    ScaffoldMessenger.of(context).hideCurrentSnackBar();
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Row(
+          children: [
+            const Icon(Icons.route, color: Colors.white),
+            const SizedBox(width: 10),
+            const Expanded(
+              child: Text(
+                'You appear to be off route. Recalculating...',
+                style: TextStyle(fontWeight: FontWeight.bold),
+              ),
+            ),
+          ],
+        ),
+        backgroundColor: Colors.orange,
+        duration: const Duration(seconds: 3),
+      ),
+    );
+
+    // Announce rerouting
+    await _speakDirections(
+        "You appear to be off route. Recalculating directions.");
+
+    try {
+      // Get fresh navigation steps from current position
+      debugPrint(
+          'MAP_NAV: Fetching new route from current position to destination');
+      final newSteps = await MapService.getNavigationSteps(
+        origin: _currentPosition!,
+        destination: _destinationPosition!,
+      );
+
+      if (newSteps.isNotEmpty) {
+        setState(() {
+          _navigationSteps = newSteps;
+          _currentStepIndex = 0;
+          _currentInstructionText = _navigationSteps[0].instruction;
+          _isOffRoute = false;
+          _offRouteCounter = 0;
+          _hasAnnouncedNextTurn = false;
+        });
+
+        // Update polyline with new route
+        await _updateRoutePolyline();
+
+        // Show the first instruction
+        _showNavigationInstruction(isNewStep: true);
+
+        debugPrint(
+            'MAP_NAV: Route successfully recalculated with ${newSteps.length} steps');
+      } else {
+        debugPrint('MAP_NAV: Failed to get new navigation steps');
+      }
+    } catch (e) {
+      debugPrint('MAP_NAV: Error during rerouting: $e');
+    }
+  }
+
+  void _registerNavigationCallbacks() {
+    debugPrint('MAP_SCREEN: Registering navigation callbacks');
+
+    NavigationHandler.instance.registerCallbacks(
+      onDestinationFound: (location, name) {
+        print('MAP_SCREEN: Setting destination from voice command: $name');
+        setState(() {
+          _destinationPosition = location;
+          _searchController.text = name;
+          _updateMarkers();
+        });
+
+        if (_currentPosition != null) {
+          _loadRoute(_currentPosition!, location);
+          _fitMapToShowRoute(_currentPosition!, location);
+        }
+      },
+      onNavigationStart: () {
+        print('MAP_SCREEN: Starting navigation from voice command');
+        _startNavigation();
+      },
+      onNavigationStop: () {
+        print('MAP_SCREEN: Stopping navigation from voice command');
+        _cancelRoute();
+      },
+    );
+
+    _tts.speak("Navigation system initialized");
+  }
+
   @override
   Widget build(BuildContext context) {
     debugPrint(
@@ -819,6 +976,14 @@ class _MapScreenState extends State<MapScreen> {
                             _mapController.complete(controller);
                             debugPrint(
                                 'MAP_SCREEN: Controller completed successfully');
+
+                            // Set flag that map is initialized and register callbacks
+                            setState(() {
+                              _isMapInitialized = true;
+                            });
+
+                            // Register callbacks only after map is created
+                            _registerNavigationCallbacks();
                           }
                         } catch (e) {
                           debugPrint(
