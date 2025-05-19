@@ -16,6 +16,10 @@ class NavigationHandler {
   // Callback for updating destination in map_screen
   Function(LatLng, String)? onDestinationFound;
   Function()? onNavigationStart;
+  Function()? onNavigationStop; // New callback for stopping navigation
+
+  // Property for tracking navigation state
+  bool _currentlyNavigating = false;
 
   NavigationHandler._internal();
 
@@ -30,24 +34,101 @@ class NavigationHandler {
 
   Future<void> _speak(String message) async {
     print("[TTS] Speaking: $message");
+    await _tts.stop();
+    await _tts.awaitSpeakCompletion(true);
     await _tts.speak(message);
     // Wait for TTS to complete
-    await Future.delayed(const Duration(milliseconds: 300));
+    int waitTime = 500 + (message.length * 60);
+    await Future.delayed(Duration(milliseconds: waitTime));
   }
 
   // Register callback functions from map_screen
   void registerCallbacks({
     required Function(LatLng, String) onDestinationFound,
     required Function() onNavigationStart,
+    required Function() onNavigationStop, // Add this parameter
   }) {
     print("[NavigationHandler] Registering callbacks");
     this.onDestinationFound = onDestinationFound;
     this.onNavigationStart = onNavigationStart;
+    this.onNavigationStop = onNavigationStop;
   }
 
   // To check if callbacks are registered
   bool areCallbacksRegistered() {
-    return onDestinationFound != null && onNavigationStart != null;
+    return onDestinationFound != null &&
+        onNavigationStart != null &&
+        onNavigationStop != null;
+  }
+
+  // Method for MapScreen to update navigation state
+  void updateNavigationState(bool isNavigating) {
+    _currentlyNavigating = isNavigating;
+  }
+
+  // Helper method to check if currently navigating
+  bool _isCurrentlyNavigating() {
+    return _currentlyNavigating;
+  }
+
+  // New method to stop navigation
+  Future<bool> handleStopNavigation() async {
+    print("[NavigationHandler] Processing request to stop navigation");
+
+    if (!areCallbacksRegistered()) {
+      print(
+          "[NavigationHandler] No callbacks registered. Unable to stop navigation.");
+      await _speak(
+          "I'm not ready to handle navigation commands yet. Please try again in a moment.");
+      return false;
+    }
+
+    // Call the navigation stop callback
+    if (onNavigationStop != null) {
+      print("[NavigationHandler] Stopping navigation");
+      onNavigationStop!();
+      await _speak("Navigation stopped");
+      return true;
+    }
+
+    return false;
+  }
+
+  // New method to change destination
+  Future<bool> handleChangeDestination(String newDestination) async {
+    print(
+        "[NavigationHandler] Processing request to change destination to: $newDestination");
+
+    if (!areCallbacksRegistered()) {
+      print(
+          "[NavigationHandler] No callbacks registered. Unable to change destination.");
+      await _speak(
+          "I'm not ready to handle navigation commands yet. Please try again in a moment.");
+      return false;
+    }
+
+    // Ask for confirmation
+    await _speak("Do you want to change your destination to $newDestination?");
+    final confirmed = await _listenForConfirmation();
+
+    if (!confirmed) {
+      print("[NavigationHandler] User declined to change destination");
+      await _speak("Continuing with the current destination");
+      return false;
+    }
+
+    // Stop current navigation
+    if (onNavigationStop != null) {
+      print(
+          "[NavigationHandler] Stopping current navigation to change destination");
+      onNavigationStop!();
+
+      // Brief pause to allow the stop to complete
+      await Future.delayed(Duration(milliseconds: 800));
+    }
+
+    // Start new navigation to the new destination
+    return await handleNavigationRequest(newDestination);
   }
 
   // Main entry point for handling navigation requests
@@ -61,6 +142,31 @@ class NavigationHandler {
       await _speak(
           "I'm not ready to navigate yet. Please try again in a moment.");
       return false;
+    }
+
+    // Check if already navigating and ask if we should change destination
+    if (_isCurrentlyNavigating()) {
+      print(
+          "[NavigationHandler] Already navigating. Asking to change destination");
+      await _speak(
+          "You're already navigating. Do you want to change your destination to $destination instead?");
+      final changeConfirmed = await _listenForConfirmation();
+
+      if (!changeConfirmed) {
+        print("[NavigationHandler] User declined to change destination");
+        await _speak("Continuing with the current destination");
+        return false;
+      }
+
+      // Stop the current navigation
+      if (onNavigationStop != null) {
+        print(
+            "[NavigationHandler] Stopping current navigation to change destination");
+        onNavigationStop!();
+
+        // Brief pause to allow the stop to complete
+        await Future.delayed(Duration(milliseconds: 800));
+      }
     }
 
     await _speak("Looking for $destination");
@@ -150,6 +256,7 @@ class NavigationHandler {
         if (onNavigationStart != null) {
           print("[NavigationHandler] Starting navigation");
           onNavigationStart!();
+          updateNavigationState(true); // Update navigation state
           await _speak("Starting navigation to " +
               selectedSuggestion.description.split('-')[0].trim());
           return true;
@@ -266,15 +373,6 @@ class NavigationHandler {
             }
           }
         },
-        // onError: (error) {
-        //   print("[NavigationHandler] Speech recognition error: $error");
-        //   if (!hasResponse) {
-        //     hasResponse = true;
-        //     _speak(
-        //         "There was an error with speech recognition. Please double tap to try again.");
-        //     completer.complete(null);
-        //   }
-        // },
       );
 
       // Set timeout
@@ -447,13 +545,6 @@ class NavigationHandler {
               }
             }
           },
-          // onError: (error) {
-          //   print("[NavigationHandler] Speech recognition error: $error");
-          //   if (!hasResponse) {
-          //     hasResponse = true;
-          //     completer.complete(null);
-          //   }
-          // },
         );
 
         // Set timeout

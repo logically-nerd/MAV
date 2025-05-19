@@ -1,4 +1,4 @@
-package com.example.sensor_demo
+package com.example.MAV
 
 import android.app.Activity
 import android.content.Context

@@ -6,7 +6,14 @@ import 'confirmation_handler.dart';
 import 'navigation_handler.dart';
 import 'sos_service.dart';
 
-enum IntentType { navigate, awareness, sos, unknown }
+enum IntentType {
+  navigate,
+  awareness,
+  sos,
+  stopNavigation,
+  changeDestination,
+  unknown
+}
 
 class IntentResult {
   final IntentType intent;
@@ -138,6 +145,27 @@ class ConversationService {
 
           final intent = _classifyIntent(transcript);
 
+          // Handle stop navigation intent
+          if (intent.intent == IntentType.stopNavigation) {
+            print("[Conversation] Stop navigation intent detected");
+            await _navigationHandler.handleStopNavigation();
+            completer.complete(intent);
+            _isListening = false;
+            return;
+          }
+
+          // Handle change destination intent
+          if (intent.intent == IntentType.changeDestination &&
+              intent.destination != null) {
+            print(
+                "[Conversation] Change destination intent detected: ${intent.destination}");
+            await _navigationHandler
+                .handleChangeDestination(intent.destination!);
+            completer.complete(intent);
+            _isListening = false;
+            return;
+          }
+
           if (intent.intent == IntentType.navigate &&
               intent.destination != null) {
             // Handle navigation intent
@@ -190,7 +218,22 @@ class ConversationService {
 
   IntentResult _classifyIntent(String sentence) {
     print("[Conversation] Classifying: $sentence");
-    if (_matchesAwareness(sentence)) {
+
+    // Check for stop navigation intent first
+    if (_matchesStopNavigation(sentence)) {
+      return IntentResult(intent: IntentType.stopNavigation, raw: sentence);
+    }
+    // Check for change destination intent
+    else if (_matchesChangeDestination(sentence)) {
+      final destination = _extractChangeDestination(sentence);
+      return IntentResult(
+        intent: IntentType.changeDestination,
+        destination: destination,
+        raw: sentence,
+      );
+    }
+    // Continue with existing checks
+    else if (_matchesAwareness(sentence)) {
       return IntentResult(intent: IntentType.awareness, raw: sentence);
     } else if (_matchesNavigate(sentence)) {
       final destination = _extractDestination(sentence);
@@ -255,6 +298,40 @@ class ConversationService {
     return keywords.any((k) => sentence.contains(k));
   }
 
+  bool _matchesStopNavigation(String sentence) {
+    const patterns = [
+      "stop navigation",
+      "stop navigating",
+      "cancel navigation",
+      "end navigation",
+      "stop directions",
+      "cancel directions",
+      "stop route",
+      "cancel route",
+      "exit navigation",
+      "quit navigation",
+      "terminate navigation"
+    ];
+    return patterns.any((p) => sentence.contains(p));
+  }
+
+  bool _matchesChangeDestination(String sentence) {
+    const patterns = [
+      "change destination",
+      "change my destination",
+      "navigate to a different",
+      "go to a different",
+      "switch destination",
+      "redirect to",
+      "take me somewhere else",
+      "take me to a different",
+      "i want to go somewhere else",
+      "navigate elsewhere",
+      "change route to"
+    ];
+    return patterns.any((p) => sentence.contains(p));
+  }
+
   String? _extractDestination(String sentence) {
     final regex = RegExp(
       r"(navigate to|go to|head to|take me to|let's go to|i want to go to|move to|get to)\s+(.*)",
@@ -262,5 +339,19 @@ class ConversationService {
     final match = regex.firstMatch(sentence);
     print("[Conversation] Extracted destination: ${match?.group(2)?.trim()}");
     return match?.group(2)?.trim();
+  }
+
+  String? _extractChangeDestination(String sentence) {
+    // Try to extract destination from change destination phrases
+    final regex = RegExp(
+      r"(change destination to|change my destination to|redirect to|switch destination to|change route to|take me to)\s+(.*)",
+    );
+    final match = regex.firstMatch(sentence);
+    if (match != null) {
+      return match.group(2)?.trim();
+    }
+
+    // If no direct destination extraction, check for navigate patterns as fallback
+    return _extractDestination(sentence);
   }
 }

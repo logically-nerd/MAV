@@ -37,6 +37,11 @@ class _MapScreenState extends State<MapScreen> {
 
   final FlutterTts _tts = FlutterTts();
 
+  // Add these variables to keep track of direction
+  double _previousDistanceToDestination = 0.0;
+  int _wrongDirectionCounter = 0;
+  bool _hasWarnedWrongDirection = false;
+
   Future<void> _speakDirections(String instruction) async {
     debugPrint('MAP_NAV: Speaking - $instruction');
 
@@ -85,6 +90,10 @@ class _MapScreenState extends State<MapScreen> {
       onNavigationStart: () {
         print('MAP_SCREEN: Starting navigation from voice command');
         _startNavigation();
+      },
+      onNavigationStop: () {
+        print('MAP_SCREEN: Stopping navigation from voice command');
+        _cancelRoute();
       },
     );
   }
@@ -336,6 +345,7 @@ class _MapScreenState extends State<MapScreen> {
       _distanceToDestination = 0.0;
       _updateMarkers();
     });
+    _updateNavigationState();
 
     // Return to current location
     if (_currentPosition != null) {
@@ -358,7 +368,11 @@ class _MapScreenState extends State<MapScreen> {
     setState(() {
       _isNavigating = true;
       _isLoading = true;
+      _previousDistanceToDestination = 0.0; // Reset the direction tracking
+      _wrongDirectionCounter = 0;
+      _hasWarnedWrongDirection = false;
     });
+    _updateNavigationState();
 
     try {
       debugPrint('MAP_NAV: Fetching navigation steps...');
@@ -471,9 +485,110 @@ class _MapScreenState extends State<MapScreen> {
     double distanceInMeters =
         MapService.calculateDistance(_currentPosition!, _destinationPosition!);
 
+    // Check if we're moving in the wrong direction
+    if (_previousDistanceToDestination > 0 &&
+        distanceInMeters > _previousDistanceToDestination &&
+        _isNavigating) {
+      // Only increment counter if the difference is significant (to filter out GPS fluctuations)
+      if (distanceInMeters - _previousDistanceToDestination > 3.0) {
+        _wrongDirectionCounter++;
+        debugPrint(
+            'MAP_NAV: Possible wrong direction detected. Counter: $_wrongDirectionCounter');
+      }
+
+      // If we've detected consistent wrong movement and haven't warned
+      if (_wrongDirectionCounter >= 5 && !_hasWarnedWrongDirection) {
+        _warnWrongDirection();
+        _hasWarnedWrongDirection = true;
+
+        // Reset counter after warning
+        _wrongDirectionCounter = 0;
+
+        // Schedule reset of warning flag after some time
+        Future.delayed(Duration(seconds: 30), () {
+          if (mounted) {
+            setState(() {
+              _hasWarnedWrongDirection = false;
+            });
+          }
+        });
+      }
+    } else {
+      // Reset counter if we're moving in the right direction
+      if (_wrongDirectionCounter > 0 &&
+          distanceInMeters < _previousDistanceToDestination) {
+        _wrongDirectionCounter = 0;
+      }
+    }
+
+    // Update the previous distance
+    _previousDistanceToDestination = distanceInMeters;
+
     setState(() {
       _distanceToDestination = distanceInMeters;
     });
+  }
+
+  void _warnWrongDirection() {
+    if (!_isNavigating) return;
+
+    debugPrint('MAP_NAV: WARNING - User moving in wrong direction!');
+
+    // Get the bearing to the next waypoint
+    double bearing = 0;
+    String directionText = "turn around";
+
+    if (_currentStepIndex < _navigationSteps.length) {
+      final targetPoint = _navigationSteps[_currentStepIndex].endLocation;
+      bearing = MapService.calculateBearing(_currentPosition!, targetPoint);
+
+      // Convert bearing to a cardinal direction instruction
+      directionText = _getDirectionFromBearing(bearing);
+    }
+
+    // Show snackbar with warning
+    ScaffoldMessenger.of(context).hideCurrentSnackBar();
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Row(
+          children: [
+            const Icon(Icons.warning, color: Colors.white),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                'Wrong direction! Please $directionText',
+                style: const TextStyle(fontWeight: FontWeight.bold),
+              ),
+            ),
+          ],
+        ),
+        backgroundColor: Colors.red,
+        duration: const Duration(seconds: 5),
+      ),
+    );
+
+    // Speak the warning
+    _speakDirections(
+        "You're going in the wrong direction. Please $directionText");
+  }
+
+  String _getDirectionFromBearing(double bearing) {
+    // Normalize bearing to 0-360
+    bearing = (bearing + 360) % 360;
+
+    // Convert bearing to a cardinal direction
+    if (bearing >= 337.5 || bearing < 22.5) return "turn around and head north";
+    if (bearing >= 22.5 && bearing < 67.5)
+      return "turn around and head northeast";
+    if (bearing >= 67.5 && bearing < 112.5) return "turn around and head east";
+    if (bearing >= 112.5 && bearing < 157.5)
+      return "turn around and head southeast";
+    if (bearing >= 157.5 && bearing < 202.5)
+      return "turn around and head south";
+    if (bearing >= 202.5 && bearing < 247.5)
+      return "turn around and head southwest";
+    if (bearing >= 247.5 && bearing < 292.5) return "turn around and head west";
+    return "turn around and head northwest";
   }
 
   void _checkForStepProgress() {
@@ -601,6 +716,7 @@ class _MapScreenState extends State<MapScreen> {
     setState(() {
       _isNavigating = false;
     });
+    _updateNavigationState();
 
     // Show arrival message
     ScaffoldMessenger.of(context).hideCurrentSnackBar();
@@ -676,6 +792,10 @@ class _MapScreenState extends State<MapScreen> {
     } catch (e) {
       debugPrint('Error animating camera: $e');
     }
+  }
+
+  void _updateNavigationState() {
+    NavigationHandler.instance.updateNavigationState(_isNavigating);
   }
 
   @override

@@ -90,12 +90,12 @@ BEGIN
         BLOCK "040904e4"
         BEGIN
             VALUE "CompanyName", "com.example" "\0"
-            VALUE "FileDescription", "sensor_demo" "\0"
+            VALUE "FileDescription", "MAV" "\0"
             VALUE "FileVersion", VERSION_AS_STRING "\0"
-            VALUE "InternalName", "sensor_demo" "\0"
+            VALUE "InternalName", "MAV" "\0"
             VALUE "LegalCopyright", "Copyright (C) 2025 com.example. All rights reserved." "\0"
-            VALUE "OriginalFilename", "sensor_demo.exe" "\0"
-            VALUE "ProductName", "sensor_demo" "\0"
+            VALUE "OriginalFilename", "MAV.exe" "\0"
+            VALUE "ProductName", "MAV" "\0"
             VALUE "ProductVersion", VERSION_AS_STRING "\0"
         END
     END
