@@ -15,6 +15,7 @@ class RotationDetector {
   bool _isCalibrated = false;
   DateTime? _lastCaptureTime;
   bool _isListening = false;
+  int _currentAngleValue = 0; // New field to store the current angle
 
   // Stream subscriptions
   StreamSubscription<AccelerometerEvent>? _accelSubscription;
@@ -73,6 +74,9 @@ class RotationDetector {
           // Calculate rotation from initial position
           double rotationDegrees = _calculateRotationDegrees();
           
+          // Update current angle value
+          _updateCurrentAngleValue(rotationDegrees);
+          
           // Check for 90-degree rotation
           if (_shouldTriggerRotationEvent(rotationDegrees, debounceTime)) {
             print('DEBUG: 90-degree rotation detected! Rotation: ${rotationDegrees.toStringAsFixed(2)}°');
@@ -84,6 +88,19 @@ class RotationDetector {
         }
       }
     });
+  }
+  
+  /// Updates the current angle value based on rotation degrees
+  void _updateCurrentAngleValue(double rotationDegrees) {
+    // Normalize to 0-359 range
+    double normalizedDegrees = rotationDegrees % 360;
+    if (normalizedDegrees < 0) normalizedDegrees += 360;
+    
+    // Round to nearest 90 degrees
+    int angleValue = ((normalizedDegrees + 45) ~/ 90 * 90) % 360;
+    
+    // Update the current angle value
+    _currentAngleValue = angleValue;
   }
   
   /// Updates device orientation based on gravity and magnetic field
@@ -131,9 +148,10 @@ class RotationDetector {
     
     // Check if rotation is approximately 90 degrees (±5°)
     final bool is90DegreeRotation = 
-        (rotationDegrees.abs() > _rotationThresholdDegrees && rotationDegrees.abs() < 95) ||
-        (rotationDegrees.abs() > 175 && rotationDegrees.abs() < 185) ||
-        (rotationDegrees.abs() > 265 && rotationDegrees.abs() < 275);
+      (rotationDegrees.abs() >=0 && rotationDegrees.abs() <=5 ) || // Around 0°
+      (rotationDegrees.abs() > _rotationThresholdDegrees && rotationDegrees.abs() < 95) ||
+      (rotationDegrees.abs() > 175 && rotationDegrees.abs() < 185) ||
+      (rotationDegrees.abs() > 265 && rotationDegrees.abs() < 275);
     
     return _isCalibrated && timeElapsed && is90DegreeRotation;
   }
@@ -165,6 +183,9 @@ class RotationDetector {
   bool get isListening {
     return _isListening;
   }
+
+  /// Returns the current angle rounded to 0, 90, 180, or 270 degrees
+  int? get currentAngle => _currentAngleValue;
 
   /// Disposes the detector and cleans up resources
   void dispose() {
