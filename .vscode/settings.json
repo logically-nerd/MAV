@@ -1,4 +1,4 @@
 {
   "cmake.sourceDirectory": "/home/logically-nerd/Workspace/MAV/linux/flutter",
-  "java.configuration.updateBuildConfiguration": "interactive"
+  "java.configuration.updateBuildConfiguration": "automatic"
 }

@@ -1,5 +1,5 @@
 import 'dart:ui';
-import 'package:MAV/screens/sensor_screen/human_oreintation_screen.dart';
+import 'package:MAV/services/safe_path_service/yolo_model.dart';
 import 'package:flutter/material.dart';
 import 'screens/sensor_screen/device_orientation.dart';
 import 'package:MAV/screens/intent_listener_widget.dart';
@@ -107,11 +107,13 @@ class HomePage extends StatefulWidget {
 
 class _HomePageState extends State<HomePage> {
   late List<CameraDescription> _cameras = [];
+  // final YoloModel _yoloModel = YoloModel();
 
   @override
   void initState() {
     super.initState();
     _initializeCameras();
+    testYoloPrediction();
   }
 
   Future<void> _initializeCameras() async {
@@ -126,49 +128,51 @@ class _HomePageState extends State<HomePage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-        appBar: AppBar(
-          title: Padding(
-            padding: const EdgeInsets.fromLTRB(6, 4, 0, 4),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.start,
-              spacing: 13,
-              children: [
-                Text(
-                  'MAV',
-                  style: GoogleFonts.tektur(
-                    fontSize: 30,
-                    fontWeight: FontWeight.bold,
-                    color: const Color.fromARGB(215, 255, 255, 255),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          backgroundColor: Colors.blueAccent,
-        ),
-        body: Stack(
-          children: [
-            const MapScreen(),
-            Positioned(
-              top: 0,
-              left: 0,
-              right: 0,
-              bottom: 0,
-              child: Center(
-                child: ClipRect(
-                  child: BackdropFilter(
-                    filter: ImageFilter.blur(sigmaX: 0.5, sigmaY: 0.5),
-                    child: Container(
-                      width: double.infinity,
-                      height: double.infinity,
-                      color: Colors.black.withAlpha(10),
-                      child: const IntentListenerWidget(),
-                    ),
-                  ),
+      appBar: AppBar(
+        title: Padding(
+          padding: const EdgeInsets.fromLTRB(6, 4, 0, 4),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.start,
+            spacing: 13,
+            children: [
+              Text(
+                'MAV',
+                style: GoogleFonts.tektur(
+                  fontSize: 30,
+                  fontWeight: FontWeight.bold,
+                  color: const Color.fromARGB(215, 255, 255, 255),
                 ),
               ),
-            )
-          ],
-        ));
+            ],
+          ),
+        ),
+        backgroundColor: Colors.blueAccent,
+      ),
+      // body: Stack(
+      //   children: [
+      //     const MapScreen(),
+      //     Positioned(
+      //       top: 0,
+      //       left: 0,
+      //       right: 0,
+      //       bottom: 0,
+      //       child: Center(
+      //         child: ClipRect(
+      //           child: BackdropFilter(
+      //             filter: ImageFilter.blur(sigmaX: 0.5, sigmaY: 0.5),
+      //             child: Container(
+      //               width: double.infinity,
+      //               height: double.infinity,
+      //               color: Colors.black.withAlpha(10),
+      //               child: const IntentListenerWidget(),
+      //             ),
+      //           ),
+      //         ),
+      //       ),
+      //     )
+      //   ],
+      // )
+      // body:
+    );
   }
 }
