@@ -1,5 +1,6 @@
 import 'dart:ui';
 import 'package:MAV/services/safe_path_service/yolo_model.dart';
+import 'package:MAV/services/safe_path_service/yolo_segmentation.dart';
 import 'package:flutter/material.dart';
 import 'package:MAV/screens/intent_listener_widget.dart';
 import 'package:MAV/screens/map_screen.dart';
@@ -12,6 +13,8 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
+import 'package:ultralytics_yolo/yolo_result.dart';
+import 'package:ultralytics_yolo/yolo_task.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -105,7 +108,7 @@ class HomePage extends StatefulWidget {
 
 class _HomePageState extends State<HomePage> {
   late List<CameraDescription> _cameras = [];
-  // final YoloModel _yoloModel = YoloModel();
+  List<YOLOResult> _latestResults = [];
 
   @override
   void initState() {
@@ -121,6 +124,22 @@ class _HomePageState extends State<HomePage> {
     } catch (e) {
       debugPrint('Error initializing cameras: $e');
     }
+  }
+
+  void _onResultsReceived(List<YOLOResult> results) {
+    print(
+        "=========================================================================================================");
+    print(results);
+    print(
+        "=========================================================================================================");
+    for (var result in results) {
+      print(
+          'Detected: ${result.className} | Confidence: ${result.confidence} ');
+      print('Mask: ${result.mask}');
+    }
+    setState(() {
+      _latestResults = results;
+    });
   }
 
   @override
@@ -170,7 +189,12 @@ class _HomePageState extends State<HomePage> {
       //     )
       //   ],
       // )
-      // body:
+      body: YoloSegmentation(
+        modelAssetPath: 'assets/models/best_float32.tflite',
+        task: YOLOTask.segment,
+        showControls: true,
+        onResultsUpdated: _onResultsReceived,
+      ),
     );
   }
 }
