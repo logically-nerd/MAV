@@ -2,6 +2,7 @@ import 'dart:ui';
 import 'package:MAV/services/safe_path_service/yolo_model.dart';
 import 'package:MAV/services/safe_path_service/yolo_segmentation.dart';
 import 'package:flutter/material.dart';
+import 'screens/sensor_screen/device_orientation.dart';
 import 'package:MAV/screens/intent_listener_widget.dart';
 import 'package:MAV/screens/map_screen.dart';
 import 'screens/camera_screen/camera_screen.dart';
@@ -28,7 +29,7 @@ Future<void> requestRequiredPermissions() async {
   await _requestLocationPermission();
   await _requestMicrophonePermission();
   await _requestCameraPermission();
-  await _requestStoragePermission();
+  await _requestStoragePermission(); 
   print("PERMISSIONS: All permission requests completed");
 }
 
@@ -64,6 +65,7 @@ Future<void> _requestCameraPermission() async {
   PermissionStatus status = await Permission.camera.request();
   print("PERMISSIONS: Camera permission status: $status");
 
+
   try {
     final cameras = await availableCameras();
     print("PERMISSIONS: Found ${cameras.length} cameras");
@@ -94,7 +96,7 @@ class MyApp extends StatelessWidget {
           brightness: Brightness.light,
         ),
       ),
-      home: const HomePage(),
+      home: const CameraPreviewPage(),
     );
   }
 }
