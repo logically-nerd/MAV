@@ -88,7 +88,15 @@ class _CameraPreviewPageState extends State<CameraPreviewPage> {
         enableAudio: false,
       );
 
-      await _cameraController!.initialize();
+      try {
+        await _cameraController!.initialize();
+      } catch (e) {
+        setState(() {
+          _errorMessage = 'Failed to initialize camera: $e';
+        });
+        await _speak('Failed to initialize camera');
+        return;
+      }
 
       if (!mounted) return;
 
@@ -98,37 +106,43 @@ class _CameraPreviewPageState extends State<CameraPreviewPage> {
 
       // Initialize rotation detector after camera is ready
       _rotationDetector = RotationDetector();
-      _rotationDetector!.startListening(
-        onRotated90Degrees: () async {
-          int? angle = _rotationDetector!.currentAngle;
-          print('DEBUG: Rotation detected at angle: $angle');
-          if (_capturedAnglePhotos.length >= 4) {
-            // await _speak('All 4 photos captured. No more photos will be taken.');
-            return;
-          }
-          if (angle != null && _targetAngles.contains(angle) && !_capturedAngles.contains(angle)) {
-            if (!_orientationConfirmed) {
-              bool isStable = await _showOrientationScreen();
-              if (!isStable) {
-                await _speak('Device not stable. Please try again.');
-                return;
+      try {
+        _rotationDetector!.startListening(
+          onRotated90Degrees: () async {
+            int? angle = _rotationDetector!.currentAngle;
+            print('DEBUG: Rotation detected at angle: $angle');
+            if (_capturedAnglePhotos.length >= 4) {
+              return;
+            }
+            if (angle != null && _targetAngles.contains(angle) && !_capturedAngles.contains(angle)) {
+              if (!_orientationConfirmed) {
+                bool isStable = await _showOrientationScreen();
+                if (!isStable) {
+                  await _speak('Device not stable. Please try again.');
+                  return;
+                }
+                _orientationConfirmed = true;
               }
-              _orientationConfirmed = true;
+              _capturedAngles.add(angle);
+              await _vibrate();
+              await _capturePhoto(angle: angle.toDouble());
+              int remaining = 4 - _capturedAnglePhotos.length;
+              if (remaining > 0) {
+                await _speak('Photo captured at $angle degrees. $remaining more to go. Please rotate to the next position.');
+              } else {
+                await _speak('All 4 photos captured. Thank you.');
+              }
+              _orientationConfirmed = false;
             }
-            _capturedAngles.add(angle);
-            await _vibrate();
-            await _capturePhoto(angle: angle.toDouble());
-            int remaining = 4 - _capturedAnglePhotos.length;
-            if (remaining > 0) {
-              await _speak('Photo captured at $angle degrees. $remaining more to go. Please rotate to the next position.');
-            } else {
-              await _speak('All 4 photos captured. Thank you.');
-            }
-            _orientationConfirmed = false; // Reset for next rotation
-          }
-        },
-        debounceTime: const Duration(seconds: 2),
-      );
+          },
+          debounceTime: const Duration(seconds: 2),
+        );
+      } catch (e) {
+        setState(() {
+          _errorMessage = 'Failed to start rotation detector: $e';
+        });
+        await _speak('Failed to start rotation detector');
+      }
     } catch (e) {
       setState(() {
         _errorMessage = 'Failed to initialize camera: $e';
