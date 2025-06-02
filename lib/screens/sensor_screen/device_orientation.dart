@@ -14,27 +14,39 @@ class DeviceOrientationScreen extends StatefulWidget {
 class _DeviceOrientationScreenState extends State<DeviceOrientationScreen> {
   // Subscriptions for sensor events
   StreamSubscription<AccelerometerEvent>? _accelerometerSubscription;
-  
+  StreamSubscription<GyroscopeEvent>? _gyroscopeSubscription;
+
   // Text-to-speech engine
   final FlutterTts _flutterTts = FlutterTts();
-  
+
   // Sensor data
   AccelerometerEvent? _accelerometerEvent;
-  
+
   // Orientation values
   double _pitch = 0.0; // Forward/backward tilt
   double _roll = 0.0;  // Left/right tilt
-  
+
+  // Filtered values for sensor fusion
+  double _filteredPitch = 0.0;
+  double _filteredRoll = 0.0;
+  double _lastTimestamp = 0.0;
+  final double _alpha = 0.98; // Complementary filter constant
+
+  // Calibration
+  Timer? _calibrationTimer;
+  double _pitchOffset = 0.0;
+  double _rollOffset = 0.0;
+
   // Define tolerance (10 degrees as mentioned)
-  final double _tolerance = 10.0 * (pi / 180.0); // Convert to radians
-  
+  final double _tolerance = 10.0 ;  
+
   // Direction to guide the user
   String _direction = "Hold phone vertically";
   bool _isCorrectOrientation = false;
-  
+
   // Timer for periodic speech feedback
   Timer? _speechTimer;
-  
+
   // Flag to avoid repeated speech for the same instruction
   String _lastSpokenDirection = "";
 
@@ -42,19 +54,24 @@ class _DeviceOrientationScreenState extends State<DeviceOrientationScreen> {
   void initState() {
     super.initState();
     _initTts();
-    _initSensors();
-    
+    _initSensorFusion();
+
     // Speak initial instruction after a short delay
     Future.delayed(const Duration(seconds: 1), () {
       _speakWithDelay("Please hold the phone vertically");
     });
-    
+
     // Set up timer for periodic guidance (every 10 seconds, less frequent)
     _speechTimer = Timer.periodic(const Duration(seconds: 10), (timer) {
       if (!_isCorrectOrientation && _direction != _lastSpokenDirection) {
         _speakWithDelay(_direction);
         _lastSpokenDirection = _direction;
       }
+    });
+
+    // Calibration timer
+    _calibrationTimer = Timer.periodic(const Duration(seconds: 30), (_) {
+      _calibrateOffsets();
     });
   }
 
@@ -71,32 +88,77 @@ class _DeviceOrientationScreenState extends State<DeviceOrientationScreen> {
     await Future.delayed(const Duration(seconds: 2));
   }
 
-  void _initSensors() {
+  void _initSensorFusion() {
     // Accelerometer provides gravity vector components
     _accelerometerSubscription = accelerometerEvents.listen((AccelerometerEvent event) {
       if (!mounted) return;
-      
+
       setState(() {
         _accelerometerEvent = event;
         _updateOrientation();
       });
     });
+    _gyroscopeSubscription = gyroscopeEvents.listen((GyroscopeEvent event) {
+      if (!mounted) return;
+      _updateOrientationFusion(event);
+    });
+  }
+
+  void _updateOrientationFusion(GyroscopeEvent gyroEvent) {
+    if (_accelerometerEvent == null) return;
+    // Time delta
+    final now = DateTime.now().millisecondsSinceEpoch / 1000.0;
+    final dt = (_lastTimestamp == 0.0) ? 0.02 : (now - _lastTimestamp);
+    _lastTimestamp = now;
+
+    // Gyro rates (rad/s)
+    final gx = gyroEvent.x;
+    final gy = gyroEvent.y;
+
+    // Integrate gyro to estimate angles
+    _filteredPitch += gx * dt;
+    _filteredRoll  += gy * dt;
+
+    // Calculate from accelerometer
+    final ax = _accelerometerEvent!.x;
+    final ay = _accelerometerEvent!.y;
+    final az = _accelerometerEvent!.z;
+    final accPitch = atan2(-ax, sqrt(ay * ay + az * az));
+    final accRoll  = atan2(ay, az);
+
+    // Complementary filter
+    _filteredPitch = _alpha * _filteredPitch + (1 - _alpha) * accPitch;
+    _filteredRoll  = _alpha * _filteredRoll  + (1 - _alpha) * accRoll;
+
+    // Apply calibration offsets
+    _pitch = _filteredPitch - _pitchOffset;
+    _roll  = _filteredRoll  - _rollOffset;
+
+    setState(() {
+      _updateOrientation();
+    });
+  }
+
+  void _calibrateOffsets() {
+    // Use current filtered values as zero reference
+    _pitchOffset = _filteredPitch;
+    _rollOffset = _filteredRoll;
   }
 
   void _updateOrientation() {
     if (_accelerometerEvent == null) return;
-    
+
     // Calculate roll (left-right tilt) and pitch (forward-backward tilt) from accelerometer
     final double x = _accelerometerEvent!.x;
     final double y = _accelerometerEvent!.y;
     final double z = _accelerometerEvent!.z;
-    
+
     // Calculate roll (rotation around X-axis, left-right tilt)
     _roll = atan2(y, z);
-    
+
     // Calculate pitch (rotation around Y-axis, forward-backward tilt)
     _pitch = atan2(-x, sqrt(y * y + z * z));
-    
+
     // Determine orientation guidance
     _determineOrientation();
   }
@@ -109,18 +171,18 @@ class _DeviceOrientationScreenState extends State<DeviceOrientationScreen> {
 
     // pitchOk is true when pitch (in degrees) is close to 0 (within tolerance)
     double pitchDegrees = _pitch * 180 / pi;
-    bool pitchOk = pitchDegrees.abs() < (_tolerance * 180 / pi);
-    
+    bool pitchOk = pitchDegrees.abs() < _tolerance;
+
     if (rollOk && pitchOk) {
       _direction = "Perfect! Hold this position. The camera is now seeing straight ahead.";
       _isCorrectOrientation = true;
-      if (_lastSpokenDirection != _direction) { 
+      if (_lastSpokenDirection != _direction) {
         _speakWithDelay(_direction);
         _lastSpokenDirection = _direction;
       }
     } else {
       _isCorrectOrientation = false;
-      
+
       // Determine which direction needs correction (prioritize the largest deviation)
       if (rollOk) {
         // Roll is good, but pitch needs adjustment
@@ -131,11 +193,10 @@ class _DeviceOrientationScreenState extends State<DeviceOrientationScreen> {
         }
       } else if (pitchOk) {
         // Pitch is good, but roll needs adjustment
-        if (_roll >110) {
+        if (_roll > 110) {
           _direction = "Tilt the phone backward";
-        } else if(_roll<60) {
+        } else if (_roll < 60) {
           _direction = "Tilt the phone forward";
-     
         }
       } else {
         // Both need adjustment, handle the larger deviation
@@ -144,17 +205,16 @@ class _DeviceOrientationScreenState extends State<DeviceOrientationScreen> {
             _direction = "Tilt the phone backward";
           } else if (_roll < 60) {
             _direction = "Tilt the phone forward";
-            
           }
         } else {
           if (_pitch > 0) {
             _direction = "Tilt the phone right";
           } else {
-            _direction = "Tilt the phone left"; 
+            _direction = "Tilt the phone left";
           }
         }
       }
-      
+
       if (_lastSpokenDirection != _direction) {
         _speakWithDelay(_direction);
         _lastSpokenDirection = _direction;
@@ -165,6 +225,8 @@ class _DeviceOrientationScreenState extends State<DeviceOrientationScreen> {
   @override
   void dispose() {
     _accelerometerSubscription?.cancel();
+    _gyroscopeSubscription?.cancel();
+    _calibrationTimer?.cancel();
     _speechTimer?.cancel();
     _flutterTts.stop();
     super.dispose();
@@ -217,7 +279,7 @@ class _DeviceOrientationScreenState extends State<DeviceOrientationScreen> {
               },
             ),
             ],
-          
+
         ),
       ),
     );
