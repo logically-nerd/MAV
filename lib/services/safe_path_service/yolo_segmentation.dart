@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:ultralytics_yolo/yolo_result.dart';
+import 'package:ultralytics_yolo/yolo_streaming_config.dart';
 import 'package:ultralytics_yolo/yolo_task.dart';
 import 'package:ultralytics_yolo/yolo_view.dart';
 import 'dart:io';
@@ -29,7 +30,7 @@ class YoloSegmentation extends StatefulWidget {
 
 class _YoloSegmentationState extends State<YoloSegmentation> {
   // Create a controller to interact with the YoloView
-  final YoloViewController _controller = YoloViewController();
+  final YOLOViewController _controller = YOLOViewController();
   String _modelPath = '';
   bool _modelLoaded = false;
   List<YOLOResult> _results = [];
@@ -118,11 +119,16 @@ class _YoloSegmentationState extends State<YoloSegmentation> {
         Expanded(
           flex: 3,
           child: _modelLoaded
-              ? YoloView(
+              ? YOLOView(
                   controller: _controller,
                   modelPath: _modelPath,
                   task: widget.task,
                   onResult: _handleDetectionResults,
+                  streamingConfig: YOLOStreamingConfig.custom(
+                    maxFPS: 1,
+                    inferenceFrequency: 25,
+                    includeMasks: true,
+                  ),
                   showNativeUI: false, // We'll use our own UI controls
                 )
               : const Center(
