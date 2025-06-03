@@ -1,5 +1,4 @@
 import 'dart:ui';
-import 'package:MAV/services/safe_path_service/yolo_model.dart';
 import 'package:MAV/services/safe_path_service/yolo_segmentation.dart';
 import 'package:flutter/material.dart';
 import 'package:ultralytics_yolo/yolo_view.dart';
@@ -116,7 +115,6 @@ class _HomePageState extends State<HomePage> {
   void initState() {
     super.initState();
     _initializeCameras();
-    testYoloPrediction();
   }
 
   Future<void> _initializeCameras() async {
@@ -137,7 +135,11 @@ class _HomePageState extends State<HomePage> {
     for (var result in results) {
       print(
           'Detected: ${result.className} | Confidence: ${result.confidence} ');
-      print('Mask: ${result.mask}');
+      print('Mask:');
+      print("Datatye: ${result.mask.runtimeType}");
+      print("Mask Lenght: ${result.mask!.length}");
+      print("Mask[0] Lenght: ${result.mask![0].length}");
+      print("*" * 150);
     }
     setState(() {
       _latestResults = results;
@@ -200,4 +202,3 @@ class _HomePageState extends State<HomePage> {
     );
   }
 }
-

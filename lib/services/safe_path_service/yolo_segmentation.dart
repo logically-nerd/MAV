@@ -129,6 +129,10 @@ class _YoloSegmentationState extends State<YoloSegmentation> {
                     inferenceFrequency: 25,
                     includeMasks: true,
                   ),
+                  onPerformanceMetrics: (metrics) {
+                    // Real-time performance monitoring
+                    print('Metrics: $metrics');
+                  },
                   showNativeUI: false, // We'll use our own UI controls
                 )
               : const Center(
