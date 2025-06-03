@@ -4,8 +4,6 @@ import 'package:flutter/material.dart';
 import 'package:ultralytics_yolo/yolo_view.dart';
 import 'screens/sensor_screen/device_orientation.dart';
 import 'package:MAV/screens/intent_listener_widget.dart';
-import 'package:MAV/screens/map_screen.dart';
-import 'screens/camera_screen/camera_screen.dart';
 import 'screens/sensor_screen/device_orientation.dart';
 import 'package:camera/camera.dart';
 import 'screens/yoloe_screen/websocket_client_yoloe.dart';
