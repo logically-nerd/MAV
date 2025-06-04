@@ -4,6 +4,8 @@ import 'package:MAV/services/sensor_service/human_orientation_service.dart';
 import 'package:vibration/vibration.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 import 'device_orientation.dart';
+import 'package:MAV/services/sensor_service/sensor_websocket_service.dart';
+import 'dart:io';
 
 class CameraPreviewPage extends StatefulWidget {
   const CameraPreviewPage({Key? key}) : super(key: key);
@@ -30,6 +32,7 @@ class _CameraPreviewPageState extends State<CameraPreviewPage> {
   final List<int> _targetAngles = [0, 90, 180, 270];
   final Set<int> _capturedAngles = {};
   bool _orientationConfirmed = false;
+  late SensorWebSocketService _wsService;
 
   @override
   void initState() {
@@ -39,6 +42,8 @@ class _CameraPreviewPageState extends State<CameraPreviewPage> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _speak('Please rotate the device in a clockwise direction to start capturing.');
     });
+    _wsService = SensorWebSocketService(serverUrl: 'ws://192.168.29.6:8765');
+    _wsService.connect();
     _initializeCamera();
   }
 
@@ -176,6 +181,15 @@ class _CameraPreviewPageState extends State<CameraPreviewPage> {
       
       await _vibrate();
       print('Photo saved at angle ${angle?.toInt()}°: ${photo.path}');
+      // Send image and angle using the websocket service
+      try {
+        final fileBytes = await File(photo.path).readAsBytes();
+        if (angle != null) {
+          await _wsService.sendImageWithAngle(fileBytes, angle);
+        }
+      } catch (e) {
+        print('Error sending image via websocket: $e');
+      }
     } catch (e) {
       setState(() {
         _errorMessage = 'Failed to capture photo: $e';
@@ -204,6 +218,7 @@ class _CameraPreviewPageState extends State<CameraPreviewPage> {
     _cameraController?.dispose();
     _rotationDetector?.dispose();
     _flutterTts?.stop();
+    _wsService.disconnect();
     super.dispose();
   }
 
