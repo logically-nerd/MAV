@@ -126,7 +126,7 @@ class _YoloSegmentationState extends State<YoloSegmentation> {
                   onResult: _handleDetectionResults,
                   streamingConfig: YOLOStreamingConfig.custom(
                     maxFPS: 1,
-                    inferenceFrequency: 25,
+                    inferenceFrequency: 1,
                     includeMasks: true,
                   ),
                   onPerformanceMetrics: (metrics) {
@@ -148,43 +148,44 @@ class _YoloSegmentationState extends State<YoloSegmentation> {
         ),
 
         // Results display
-        Expanded(
-          flex: 1,
-          child: Container(
-            color: Colors.black.withOpacity(0.05),
-            child: Column(
-              children: [
-                Padding(
-                  padding: const EdgeInsets.all(8.0),
-                  child: Text(
-                    'Detections: ${_results.length}',
-                    style: const TextStyle(
-                        fontSize: 16, fontWeight: FontWeight.bold),
+        if (widget.showControls)
+          Expanded(
+            flex: 1,
+            child: Container(
+              color: Colors.black.withOpacity(0.05),
+              child: Column(
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.all(8.0),
+                    child: Text(
+                      'Detections: ${_results.length}',
+                      style: const TextStyle(
+                          fontSize: 16, fontWeight: FontWeight.bold),
+                    ),
                   ),
-                ),
-                Expanded(
-                  child: ListView.builder(
-                    itemCount: _results.length,
-                    itemBuilder: (context, index) {
-                      final result = _results[index];
-                      return ListTile(
-                        dense: true,
-                        title: Text(result.className),
-                        subtitle: Text(
-                          'Confidence: ${(result.confidence * 100).toStringAsFixed(1)}%',
-                        ),
-                        trailing: result.mask != null
-                            ? const Icon(Icons.auto_awesome,
-                                color: Colors.green, size: 20)
-                            : null,
-                      );
-                    },
+                  Expanded(
+                    child: ListView.builder(
+                      itemCount: _results.length,
+                      itemBuilder: (context, index) {
+                        final result = _results[index];
+                        return ListTile(
+                          dense: true,
+                          title: Text(result.className),
+                          subtitle: Text(
+                            'Confidence: ${(result.confidence * 100).toStringAsFixed(1)}%',
+                          ),
+                          trailing: result.mask != null
+                              ? const Icon(Icons.auto_awesome,
+                                  color: Colors.green, size: 20)
+                              : null,
+                        );
+                      },
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
-        ),
 
         // Controls section - only show if showControls is true
         if (widget.showControls)

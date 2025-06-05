@@ -192,9 +192,9 @@ class _HomePageState extends State<HomePage> {
       //   ],
       // )
       body: YoloSegmentation(
-        modelAssetPath: 'assets/models/best_float32.tflite',
+        modelAssetPath: 'assets/models/v11_best_float32.tflite',
         task: YOLOTask.segment,
-        showControls: true,
+        showControls: false,
         onResultsUpdated: _onResultsReceived,
       ),
     );
