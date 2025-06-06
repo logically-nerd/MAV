@@ -33,9 +33,24 @@ class ConversationService {
   final NavigationHandler _navigationHandler = NavigationHandler.instance;
   final ConfirmationHandler _confirmationHandler = ConfirmationHandler();
 
-  bool _isListening = false;
+  // Callback for showing human orientation screen
+  Function()? onShowHumanOrientationScreen;
 
+  bool _isListening = false;
   ConversationService._internal();
+
+  // Register callback function for showing human orientation screen
+  void registerAwarenessCallback({
+    required Function() onShowHumanOrientationScreen,
+  }) {
+    print("[ConversationService] Registering awareness callback");
+    this.onShowHumanOrientationScreen = onShowHumanOrientationScreen;
+  }
+
+  // Check if callback is registered
+  bool isAwarenessCallbackRegistered() {
+    return onShowHumanOrientationScreen != null;
+  }
 
   Future<void> preload() async {
     print("[Conversation] Preloading speech services...");
@@ -177,15 +192,25 @@ class ConversationService {
 
             completer.complete(intent);
             _isListening = false;
-            return;
-          } else if (intent.intent == IntentType.awareness) {
+            return;          
+            } 
+            else if (intent.intent == IntentType.awareness) {
             // Handle awareness intent
             final confirmed = await _confirmationHandler.confirmAwareness();
 
             if (confirmed == true) {
               print("[Conversation] Awareness confirmed");
-              await _speak("Getting surroundings information.");
-              // Here you would call awareness service (not implemented yet)
+              await _speak("Starting human orientation screen for surroundings analysis.");
+              
+              // Check if callback is registered
+              if (isAwarenessCallbackRegistered()) {
+                print("[ConversationService] Calling human orientation screen");
+                onShowHumanOrientationScreen!();
+              } else {
+                print("[ConversationService] No awareness callback registered");
+                await _speak("I'm not ready to handle awareness commands yet. Please try again in a moment.");
+              }
+               
             } else {
               print("[Conversation] Awareness canceled by user");
               await _speak("Awareness check canceled.");
