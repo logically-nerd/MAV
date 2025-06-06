@@ -1005,53 +1005,53 @@ class _MapScreenState extends State<MapScreen> {
                     ),
 
           // Search bar (keep this for searching destinations)
-          Positioned(
-            top: 50,
-            left: 20,
-            right: 20,
-            child: Container(
-              decoration: BoxDecoration(
-                color: const Color.fromARGB(255, 255, 255, 255),
-                borderRadius: BorderRadius.circular(8),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.grey.withOpacity(0.5),
-                    spreadRadius: 2,
-                    blurRadius: 7,
-                    offset: const Offset(0, 3),
-                  )
-                ],
-              ),
-              child: TextField(
-                controller: _searchController,
-                style: const TextStyle(color: Color.fromARGB(255, 0, 0, 0)),
-                decoration: InputDecoration(
-                  hintText: 'Search places...',
-                  prefixIcon: const Icon(Icons.search),
-                  suffixIcon: _isSearching
-                      ? const SizedBox(
-                          width: 24,
-                          height: 24,
-                          child: Padding(
-                            padding: EdgeInsets.all(6.0),
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          ),
-                        )
-                      : IconButton(
-                          icon: const Icon(Icons.clear),
-                          onPressed: () {
-                            debugPrint('MAP_SCREEN: Clearing search text');
-                            _searchController.clear();
-                            setState(() => _suggestions = []);
-                          },
-                        ),
-                  border: InputBorder.none,
-                  contentPadding: const EdgeInsets.symmetric(vertical: 15),
-                ),
-                onChanged: _searchPlaces,
-              ),
-            ),
-          ),
+          // Positioned(
+          //   top: 50,
+          //   left: 20,
+          //   right: 20,
+          //   child: Container(
+          //     decoration: BoxDecoration(
+          //       color: const Color.fromARGB(255, 255, 255, 255),
+          //       borderRadius: BorderRadius.circular(8),
+          //       boxShadow: [
+          //         BoxShadow(
+          //           color: Colors.grey.withOpacity(0.5),
+          //           spreadRadius: 2,
+          //           blurRadius: 7,
+          //           offset: const Offset(0, 3),
+          //         )
+          //       ],
+          //     ),
+          //     child: TextField(
+          //       controller: _searchController,
+          //       style: const TextStyle(color: Color.fromARGB(255, 0, 0, 0)),
+          //       decoration: InputDecoration(
+          //         hintText: 'Search places...',
+          //         prefixIcon: const Icon(Icons.search),
+          //         suffixIcon: _isSearching
+          //             ? const SizedBox(
+          //                 width: 24,
+          //                 height: 24,
+          //                 child: Padding(
+          //                   padding: EdgeInsets.all(6.0),
+          //                   child: CircularProgressIndicator(strokeWidth: 2),
+          //                 ),
+          //               )
+          //             : IconButton(
+          //                 icon: const Icon(Icons.clear),
+          //                 onPressed: () {
+          //                   debugPrint('MAP_SCREEN: Clearing search text');
+          //                   _searchController.clear();
+          //                   setState(() => _suggestions = []);
+          //                 },
+          //               ),
+          //         border: InputBorder.none,
+          //         contentPadding: const EdgeInsets.symmetric(vertical: 15),
+          //       ),
+          //       onChanged: _searchPlaces,
+          //     ),
+          //   ),
+          // ),
 
           // Suggestions list (keep this for search functionality)
           if (_suggestions.isNotEmpty)
