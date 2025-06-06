@@ -1,4 +1,7 @@
 import 'dart:ui';
+import 'package:MAV/services/safe_path_service/calibration_service.dart';
+import 'package:MAV/services/safe_path_service/pipeline_controller.dart';
+import 'package:MAV/services/safe_path_service/pipeline_models.dart';
 import 'package:MAV/services/safe_path_service/yolo_segmentation.dart';
 import 'package:flutter/material.dart';
 import 'package:ultralytics_yolo/yolo_view.dart';
@@ -19,6 +22,30 @@ Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await dotenv.load(fileName: ".env");
   await requestRequiredPermissions();
+  // Initialize cameras and calibration before running the app
+  final cameras = await availableCameras();
+  if (cameras.isNotEmpty) {
+    // Initialize CameraController to get the preview size
+    final controller = CameraController(cameras[0], ResolutionPreset.high);
+    await controller.initialize();
+    final previewSize = controller.value.previewSize;
+    if (previewSize != null) {
+      await CalibrationService.initializeCalibration(
+        cameraPreviewWidth: previewSize.width.toInt(),
+        cameraPreviewHeight: previewSize.height.toInt(),
+      );
+    } else {
+      print("Preview size is null, using fallback values");
+      await CalibrationService.initializeCalibration(
+        cameraPreviewWidth: 640,
+        cameraPreviewHeight: 480,
+      );
+    }
+    // Dispose controller if needed, depending on your app structure
+    await controller.dispose();
+  } else {
+    print("No cameras available for calibration");
+  }
   runApp(const MyApp());
 }
 
@@ -106,25 +133,32 @@ class HomePage extends StatefulWidget {
 }
 
 class _HomePageState extends State<HomePage> {
-  late List<CameraDescription> _cameras = [];
-  List<YOLOResult> _latestResults = [];
+  // late List<CameraDescription> _cameras = [];
+  // List<YOLOResult> _latestResults = [];
+
+  // ++ Add Pipeline Controller instance ++
+  late NavigationPipelineController _pipelineController;
+  NavigationPipelineOutput?
+      _latestPipelineOutput; // To store and display output
 
   @override
   void initState() {
     super.initState();
-    _initializeCameras();
+    // _initializeCameras();
+    _pipelineController = NavigationPipelineController();
+    print("HomePage: NavigationPipelineController initialized.");
   }
 
-  Future<void> _initializeCameras() async {
-    try {
-      _cameras = await availableCameras();
-      setState(() {});
-    } catch (e) {
-      debugPrint('Error initializing cameras: $e');
-    }
-  }
+  // Future<void> _initializeCameras() async {
+  //   try {
+  //     _cameras = await availableCameras();
+  //     setState(() {});
+  //   } catch (e) {
+  //     debugPrint('Error initializing cameras: $e');
+  //   }
+  // }
 
-  void _onResultsReceived(List<YOLOResult> results) {
+  void _onResultsReceived(List<YOLOResult> results) async {
     print(
         "=========================================================================================================");
     print(results);
@@ -139,9 +173,28 @@ class _HomePageState extends State<HomePage> {
       print("Mask[0] Lenght: ${result.mask![0].length}");
       print("*" * 150);
     }
-    setState(() {
-      _latestResults = results;
-    });
+    // --- Call the Navigation Pipeline ---
+    try {
+      NavigationPipelineOutput pipelineOutput =
+          await _pipelineController.processFrame(results);
+
+      setState(() {
+        // _latestResults = results; // If you still need to store raw yolo results
+        _latestPipelineOutput = pipelineOutput;
+      });
+
+      // Log the JSON output (or parts of it)
+      print("--- PIPELINE OUTPUT ---");
+      print(
+          "Navigation Command: ${pipelineOutput.navigationCommand.primaryAction} towards ${pipelineOutput.navigationCommand.targetSurface}");
+      print("Voice Command: ${pipelineOutput.accessibility.voiceCommand}");
+      // print("Full JSON: ${jsonEncode(pipelineOutput.toJson())}"); // Can be very verbose
+      print("-----------------------");
+    } catch (e, stackTrace) {
+      print("HomePage: Error processing frame with navigation pipeline: $e");
+      print("Stack trace: $stackTrace");
+      // Optionally set a default/error state for _latestPipelineOutput
+    }
   }
 
   @override
@@ -191,11 +244,63 @@ class _HomePageState extends State<HomePage> {
       //     )
       //   ],
       // )
-      body: YoloSegmentation(
-        modelAssetPath: 'assets/models/v11_best_float32.tflite',
-        task: YOLOTask.segment,
-        showControls: false,
-        onResultsUpdated: _onResultsReceived,
+      // body: YoloSegmentation(
+      //   modelAssetPath: 'assets/models/v11_best_float32.tflite',
+      //   task: YOLOTask.segment,
+      //   showControls: false,
+      //   onResultsUpdated: _onResultsReceived,
+      // ),
+      body: Column(
+        // Changed to Column to display pipeline output potentially
+        children: [
+          Expanded(
+            flex: 3, // Give more space to camera view
+            child: YoloSegmentation(
+              modelAssetPath: 'assets/models/v11_best_float32.tflite',
+              task: YOLOTask.segment,
+              showControls:
+                  false, // Set to true if you want YOLO controls visible
+              onResultsUpdated: _onResultsReceived,
+            ),
+          ),
+          // Optionally display some pipeline output for debugging
+          if (_latestPipelineOutput != null)
+            Expanded(
+              flex: 1, // Less space for debug text
+              child: Container(
+                padding: const EdgeInsets.all(8.0),
+                color: Colors.grey[200],
+                child: SingleChildScrollView(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text("Pipeline Debug Output:",
+                          style: Theme.of(context).textTheme.titleMedium),
+                      const SizedBox(height: 8),
+                      Text(
+                          "Command: ${_latestPipelineOutput!.navigationCommand.primaryAction}"),
+                      Text(
+                          "Target: ${_latestPipelineOutput!.navigationCommand.targetSurface}"),
+                      Text(
+                          "Confidence: ${(_latestPipelineOutput!.navigationCommand.confidence * 100).toStringAsFixed(1)}%"),
+                      Text(
+                          "Reason: ${_latestPipelineOutput!.navigationCommand.reason}"),
+                      Text(
+                          "Voice: ${_latestPipelineOutput!.accessibility.voiceCommand}"),
+                      const SizedBox(height: 8),
+                      Text(
+                          "Best Zone: ${_latestPipelineOutput!.zoneAnalysis.currentBestZoneId}"),
+                      Text("Scores:"),
+                      ..._latestPipelineOutput!.zoneAnalysis.scores.entries
+                          .map((e) =>
+                              Text("  ${e.key}: ${e.value.toStringAsFixed(2)}"))
+                          .toList(),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+        ],
       ),
     );
   }
