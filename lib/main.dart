@@ -4,6 +4,7 @@ import 'package:MAV/services/safe_path_service/pipeline_controller.dart';
 import 'package:MAV/services/safe_path_service/pipeline_models.dart';
 import 'package:MAV/services/safe_path_service/yolo_segmentation.dart';
 import 'package:flutter/material.dart';
+import 'package:keep_screen_on/keep_screen_on.dart';
 import 'package:ultralytics_yolo/yolo_view.dart';
 import 'screens/sensor_screen/device_orientation.dart';
 import 'package:MAV/screens/intent_listener_widget.dart';
@@ -20,6 +21,7 @@ import 'package:ultralytics_yolo/yolo_task.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  KeepScreenOn.turnOn();
   await dotenv.load(fileName: ".env");
   await requestRequiredPermissions();
   // Initialize cameras and calibration before running the app
@@ -147,6 +149,13 @@ class _HomePageState extends State<HomePage> {
     // _initializeCameras();
     _pipelineController = NavigationPipelineController();
     print("HomePage: NavigationPipelineController initialized.");
+  }
+
+  @override
+  void dispose() {
+    // TODO: implement dispose
+    super.dispose();
+    KeepScreenOn.turnOff();
   }
 
   // Future<void> _initializeCameras() async {

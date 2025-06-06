@@ -36,6 +36,7 @@ dependencies:
   google_fonts: ^6.2.1
   ultralytics_yolo: ^0.1.16
   plugin_platform_interface: ^2.1.8
+  keep_screen_on: ^4.0.0
 
 dev_dependencies:
   flutter_test:
