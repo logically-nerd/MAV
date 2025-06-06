@@ -174,7 +174,7 @@ class _DeviceOrientationScreenState extends State<DeviceOrientationScreen> {
     bool pitchOk = pitchDegrees.abs() < _tolerance;
 
     if (rollOk && pitchOk) {
-      _direction = "Perfect! Hold this position. The camera is now seeing straight ahead.";
+      _direction = "Perfect! Hold this position.";
       _isCorrectOrientation = true;
       if (_lastSpokenDirection != _direction) {
         _speakWithDelay(_direction);
