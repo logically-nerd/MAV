@@ -65,6 +65,9 @@ class ImageProcessor {
     }
     // Second pass: Filter small patches
     classMap = _filterSmallPatches(rawClassMap, mapWidth, mapHeight);
+    // NEW: Third pass - propagate static obstacles forward for future planning
+    classMap = _propagateStaticObstacles(classMap, mapWidth, mapHeight);
+
     print("IMAGE_PROCESSOR: Semantic map generation complete.");
     return SemanticSegmentationMap(classMap, mapWidth, mapHeight);
   }
@@ -80,17 +83,27 @@ class ImageProcessor {
 
     for (int r = 0; r < height; r++) {
       for (int c = 0; c < width; c++) {
-        if (!visited[r][c] && rawMap[r][c] != PipelineClasses.unknown) {
+        if (!visited[r][c]) {
           String currentClass = rawMap[r][c];
           List<Point> patch = [];
 
           // Flood fill to find connected component
           _floodFill(rawMap, visited, r, c, currentClass, patch, width, height);
 
-          // If patch is too small, mark as unknown
-          if (patch.length < MIN_PATCH_SIZE) {
-            for (Point p in patch) {
-              filteredMap[p.r][p.c] = PipelineClasses.unknown;
+          if (currentClass != PipelineClasses.unknown) {
+            // If patch is too small, mark as unknown
+            if (patch.length < MIN_PATCH_SIZE) {
+              for (Point p in patch) {
+                filteredMap[p.r][p.c] = PipelineClasses.unknown;
+              }
+            }
+          } else {
+            // NEW: Handle large unknown areas - treat as obstacles
+            if (patch.length > MIN_PATCH_SIZE * 3) {
+              // Large unknown area
+              for (Point p in patch) {
+                filteredMap[p.r][p.c] = PipelineClasses.nonWalkable;
+              }
             }
           }
         }
@@ -98,6 +111,37 @@ class ImageProcessor {
     }
 
     return filteredMap;
+  }
+
+  // NEW: Propagate static obstacles forward in the image
+  static List<List<String>> _propagateStaticObstacles(
+      List<List<String>> processedMap, int width, int height) {
+    List<List<String>> propagatedMap =
+        List.generate(height, (i) => List.from(processedMap[i]));
+
+    const int PROPAGATION_DISTANCE = 20; // pixels forward
+
+    for (int r = 0; r < height - PROPAGATION_DISTANCE; r++) {
+      for (int c = 0; c < width; c++) {
+        String currentClass = processedMap[r][c];
+
+        // If current pixel is obstacle (people or non-walkable)
+        if (currentClass == PipelineClasses.people ||
+            currentClass == PipelineClasses.nonWalkable) {
+          // Propagate obstacle influence forward (towards bottom of image)
+          for (int futureR = r + 1;
+              futureR < min(r + PROPAGATION_DISTANCE, height);
+              futureR++) {
+            // Only mark as obstacle if the future area is currently unknown
+            if (propagatedMap[futureR][c] == PipelineClasses.unknown) {
+              propagatedMap[futureR][c] = PipelineClasses.nonWalkable;
+            }
+          }
+        }
+      }
+    }
+
+    return propagatedMap;
   }
 
   static void _floodFill(

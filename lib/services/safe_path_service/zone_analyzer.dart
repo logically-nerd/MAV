@@ -7,13 +7,11 @@ import 'calibration_service.dart';
 import 'decision_engine.dart';
 
 class ZoneAnalyzer {
-  static const double MIN_EDGE_DISTANCE_FOOTPATH = 0.8; // meters
+  static const double MIN_EDGE_DISTANCE_FOOTPATH = 1.5; // meters
   static const double MAX_DISTANCE_FROM_ROAD_EDGE = 1.5; // meters
-  
-  static ZoneAnalysisData analyzeZone(
-      TrapezoidZone zone,
-      SemanticSegmentationMap semanticMap,
-      List<dynamic> rawYoloResults) {
+
+  static ZoneAnalysisData analyzeZone(TrapezoidZone zone,
+      SemanticSegmentationMap semanticMap, List<dynamic> rawYoloResults) {
     print("ZONE_ANALYZER: Analyzing zone ${zone.id}");
     Map<String, int> classPixelCounts = {};
     int totalPixelsInZone = 0;
@@ -29,12 +27,17 @@ class ZoneAnalyzer {
     double maxY = zone.vertices.map((v) => v.dy).reduce(max);
 
     // Count pixels within trapezoid
-    for (int r = max(0, minY.floor()); r < min(semanticMap.height, maxY.ceil()); r++) {
-      for (int c = max(0, minX.floor()); c < min(semanticMap.width, maxX.ceil()); c++) {
+    for (int r = max(0, minY.floor());
+        r < min(semanticMap.height, maxY.ceil());
+        r++) {
+      for (int c = max(0, minX.floor());
+          c < min(semanticMap.width, maxX.ceil());
+          c++) {
         if (zone.contains(Offset(c.toDouble() + 0.5, r.toDouble() + 0.5))) {
           totalPixelsInZone++;
           String pixelClass = semanticMap.classMap[r][c];
-          classPixelCounts[pixelClass] = (classPixelCounts[pixelClass] ?? 0) + 1;
+          classPixelCounts[pixelClass] =
+              (classPixelCounts[pixelClass] ?? 0) + 1;
         }
       }
     }
@@ -53,7 +56,8 @@ class ZoneAnalyzer {
     String dominantWalkableSurface = PipelineClasses.unknown;
     double maxWalkableCoverage = -1.0;
     SURFACE_PRIORITY_SCORES.keys
-        .where((k) => k != PipelineClasses.nonWalkable && k != PipelineClasses.unknown)
+        .where((k) =>
+            k != PipelineClasses.nonWalkable && k != PipelineClasses.unknown)
         .forEach((cls) {
       double coverage = classCoveragePercentage[cls] ?? 0.0;
       if (coverage > maxWalkableCoverage) {
@@ -91,11 +95,13 @@ class ZoneAnalyzer {
     EdgeAnalysisResult edgeAnalysis = _analyzeZoneEdges(zone, semanticMap);
 
     // Stairs analysis
-    double stairCoverage = classCoveragePercentage[PipelineClasses.stairs] ?? 0.0;
+    double stairCoverage =
+        classCoveragePercentage[PipelineClasses.stairs] ?? 0.0;
     bool stairsClear = true;
 
-    print("ZONE_ANALYZER: Zone ${zone.id} - Dominant: $dominantWalkableSurface, People Pixels: $peopleCountInZone, Gap: $gapPercentage");
-    
+    print(
+        "ZONE_ANALYZER: Zone ${zone.id} - Dominant: $dominantWalkableSurface, People Pixels: $peopleCountInZone, Gap: $gapPercentage");
+
     ZoneAnalysisData zoneData = ZoneAnalysisData(
       zoneId: zone.id,
       classCoveragePercentage: classCoveragePercentage,
@@ -115,7 +121,6 @@ class ZoneAnalyzer {
 
   static EdgeAnalysisResult _analyzeZoneEdges(
       TrapezoidZone zone, SemanticSegmentationMap semanticMap) {
-    
     // Get zone bounds
     double minX = zone.vertices.map((v) => v.dx).reduce(min);
     double maxX = zone.vertices.map((v) => v.dx).reduce(max);
@@ -131,36 +136,41 @@ class ZoneAnalyzer {
     // Find actual surface edges (not image boundaries)
     List<EdgeInfo> detectedEdges = [];
     String dominantSurface = _getDominantSurface(zone, semanticMap);
-    
-    if (dominantSurface == PipelineClasses.footpath || 
+
+    if (dominantSurface == PipelineClasses.footpath ||
         dominantSurface == PipelineClasses.road) {
-      
-      // Scan for left edge
+      // Scan for left edge ONLY if left side doesn't touch boundary
       if (!touchesLeftBoundary) {
-        EdgeInfo? leftEdge = _scanForVerticalEdge(
-            zone, semanticMap, dominantSurface, true);
+        EdgeInfo? leftEdge =
+            _scanForVerticalEdge(zone, semanticMap, dominantSurface, true);
         if (leftEdge != null) detectedEdges.add(leftEdge);
       }
-      
-      // Scan for right edge  
+
+      // Scan for right edge ONLY if right side doesn't touch boundary
       if (!touchesRightBoundary) {
-        EdgeInfo? rightEdge = _scanForVerticalEdge(
-            zone, semanticMap, dominantSurface, false);
+        EdgeInfo? rightEdge =
+            _scanForVerticalEdge(zone, semanticMap, dominantSurface, false);
         if (rightEdge != null) detectedEdges.add(rightEdge);
       }
     }
 
+    // Updated: Only consider zone as touching boundary if BOTH sides touch boundaries
+    // This allows edge detection to work when only one side extends to boundary
+    bool effectivelyBounded = touchesLeftBoundary && touchesRightBoundary;
+
     return EdgeAnalysisResult(
       detectedEdges: detectedEdges,
-      touchesImageBoundary: touchesLeftBoundary || touchesRightBoundary,
+      touchesImageBoundary: effectivelyBounded, // Changed this logic
       dominantSurface: dominantSurface,
       centerPosition: _calculateZoneCenterPosition(zone),
     );
   }
 
-  static EdgeInfo? _scanForVerticalEdge(TrapezoidZone zone, 
-      SemanticSegmentationMap semanticMap, String targetSurface, bool isLeftSide) {
-    
+  static EdgeInfo? _scanForVerticalEdge(
+      TrapezoidZone zone,
+      SemanticSegmentationMap semanticMap,
+      String targetSurface,
+      bool isLeftSide) {
     double minX = zone.vertices.map((v) => v.dx).reduce(min);
     double maxX = zone.vertices.map((v) => v.dx).reduce(max);
     double minY = zone.vertices.map((v) => v.dy).reduce(min);
@@ -172,19 +182,23 @@ class ZoneAnalyzer {
 
     // Scan vertically for surface transitions
     for (int y = minY.floor(); y < maxY.ceil(); y++) {
-      if (y < 0 || y >= semanticMap.height || scanX < 0 || scanX >= semanticMap.width) continue;
-      
+      if (y < 0 ||
+          y >= semanticMap.height ||
+          scanX < 0 ||
+          scanX >= semanticMap.width) continue;
+
       String currentPixel = semanticMap.classMap[y][scanX];
       String adjacentPixel = '';
-      
+
       if (isLeftSide && scanX > 0) {
         adjacentPixel = semanticMap.classMap[y][scanX - 1];
       } else if (!isLeftSide && scanX < semanticMap.width - 1) {
         adjacentPixel = semanticMap.classMap[y][scanX + 1];
       }
-      
+
       // Check for transition from target surface to different surface
-      if (currentPixel == targetSurface && adjacentPixel != targetSurface && 
+      if (currentPixel == targetSurface &&
+          adjacentPixel != targetSurface &&
           adjacentPixel != PipelineClasses.unknown) {
         edgeTransitions++;
         edgePosition ??= scanX.toDouble();
@@ -200,7 +214,7 @@ class ZoneAnalyzer {
         isImageBoundary: false,
       );
     }
-    
+
     return null;
   }
 
@@ -210,9 +224,10 @@ class ZoneAnalyzer {
     return Offset(centerX, centerY);
   }
 
-  static String _getDominantSurface(TrapezoidZone zone, SemanticSegmentationMap semanticMap) {
+  static String _getDominantSurface(
+      TrapezoidZone zone, SemanticSegmentationMap semanticMap) {
     Map<String, int> surfaceCounts = {};
-    
+
     // Sample points within zone to determine dominant surface
     double minX = zone.vertices.map((v) => v.dx).reduce(min);
     double maxX = zone.vertices.map((v) => v.dx).reduce(max);
@@ -221,7 +236,10 @@ class ZoneAnalyzer {
 
     for (int r = minY.floor(); r < maxY.ceil(); r++) {
       for (int c = minX.floor(); c < maxX.ceil(); c++) {
-        if (r >= 0 && r < semanticMap.height && c >= 0 && c < semanticMap.width) {
+        if (r >= 0 &&
+            r < semanticMap.height &&
+            c >= 0 &&
+            c < semanticMap.width) {
           if (zone.contains(Offset(c.toDouble(), r.toDouble()))) {
             String surface = semanticMap.classMap[r][c];
             if (surface != PipelineClasses.unknown) {

@@ -13,12 +13,26 @@ class DecisionEngine {
         (SURFACE_PRIORITY_SCORES[zoneData.dominantWalkableSurface] ??
                 SURFACE_PRIORITY_SCORES[PipelineClasses.unknown])!
             .toDouble();
-    
+
+    // NEW: Heavy penalty for non-walkable dominant surface
+    if (zoneData.dominantWalkableSurface == PipelineClasses.nonWalkable) {
+      zoneData.surfaceScore = 5.0; // Very low score to avoid
+    }
+
+    // NEW: Penalty for significant non-walkable coverage
+    double nonWalkableCoverage =
+        zoneData.classCoveragePercentage[PipelineClasses.nonWalkable] ?? 0.0;
+    if (nonWalkableCoverage > 0.2) {
+      // 30% or more non-walkable
+      zoneData.surfaceScore *=
+          (1.0 - nonWalkableCoverage); // Reduce score proportionally
+    }
+
     // Penalize for large gaps
     if (zoneData.gapPercentage > GAP_LARGE_THRESHOLD_PERCENT) {
-      zoneData.surfaceScore *= 0.5; // Heavy penalty
+      zoneData.surfaceScore *= 0.1; // Heavy penalty
     } else if (zoneData.gapPercentage > GAP_SMALL_THRESHOLD_PERCENT) {
-      zoneData.surfaceScore *= 0.8; // Small penalty
+      zoneData.surfaceScore *= 0.5; // Small penalty
     }
 
     // People Clearance Score
@@ -29,13 +43,16 @@ class DecisionEngine {
       // Use actual distance if available
       double distanceM = zoneData.closestPersonDistanceMetres;
       if (distanceM > 2.0) {
-        zoneData.peopleClearanceScore = PEOPLE_CLEARANCE_SCORES["people_far"]!.toDouble();
+        zoneData.peopleClearanceScore =
+            PEOPLE_CLEARANCE_SCORES["people_far"]!.toDouble();
       } else if (distanceM > 1.0) {
-        zoneData.peopleClearanceScore = PEOPLE_CLEARANCE_SCORES["people_medium"]!.toDouble();
+        zoneData.peopleClearanceScore =
+            PEOPLE_CLEARANCE_SCORES["people_medium"]!.toDouble();
       } else {
-        zoneData.peopleClearanceScore = PEOPLE_CLEARANCE_SCORES["people_close"]!.toDouble();
+        zoneData.peopleClearanceScore =
+            PEOPLE_CLEARANCE_SCORES["people_close"]!.toDouble();
       }
-      
+
       // Additional penalty for multiple people
       if (zoneData.peopleCount > 1) {
         zoneData.peopleClearanceScore *= 0.8;
@@ -44,44 +61,47 @@ class DecisionEngine {
 
     // Enhanced Edge Safety Score
     zoneData.edgeSafetyScore = _calculateEdgeSafetyScore(zoneData);
-    
+
     // Future Continuity Score - set externally
     zoneData.futureContinuityScore = 50.0; // Neutral placeholder
   }
 
   static double _calculateEdgeSafetyScore(ZoneAnalysisData zoneData) {
     EdgeAnalysisResult edgeAnalysis = zoneData.edgeAnalysis;
-    
+
+    // Updated logic: Only skip edge analysis if effectively bounded (both sides)
     if (edgeAnalysis.touchesImageBoundary) {
-      // Zone extends to image boundary - no edge margin concerns
+      // Zone extends to both image boundaries - no edge margin concerns
       return 80.0; // Good score, no edge constraints
     }
 
     String surface = edgeAnalysis.dominantSurface;
     List<EdgeInfo> edges = edgeAnalysis.detectedEdges;
-    
+
     if (edges.isEmpty) {
+      // No edges detected - could mean zone extends to one boundary
+      // This is now neutral rather than problematic
       return 70.0; // Neutral - no specific edges detected
     }
 
     if (surface == PipelineClasses.footpath) {
-      // FOOTPATH: Maintain minimum distance from edges
+      // FOOTPATH: Maintain minimum distance from detected edges
       return _calculateFootpathEdgeScore(zoneData, edges);
-      
     } else if (surface == PipelineClasses.road) {
-      // ROAD: Stay maximum distance from nearest edge
+      // ROAD: Stay appropriate distance from detected edges
       return _calculateRoadEdgeScore(zoneData, edges);
     }
 
     return 70.0; // Default neutral score
   }
 
-  static double _calculateFootpathEdgeScore(ZoneAnalysisData zoneData, List<EdgeInfo> edges) {
+  static double _calculateFootpathEdgeScore(
+      ZoneAnalysisData zoneData, List<EdgeInfo> edges) {
     EdgeAnalysisResult edgeAnalysis = zoneData.edgeAnalysis;
     double centerX = edgeAnalysis.centerPosition.dx;
-    
+
     double minDistanceFromAnyEdge = double.infinity;
-    
+
     for (EdgeInfo edge in edges) {
       double distancePixels = (centerX - edge.position).abs();
       double distanceMeters = CalibrationService.pixelsToMeters(distancePixels);
@@ -95,21 +115,24 @@ class DecisionEngine {
     // Score based on minimum required distance
     if (minDistanceFromAnyEdge >= ZoneAnalyzer.MIN_EDGE_DISTANCE_FOOTPATH) {
       return 100.0; // Perfect - sufficient margin from all edges
-    } else if (minDistanceFromAnyEdge >= ZoneAnalyzer.MIN_EDGE_DISTANCE_FOOTPATH * 0.7) {
+    } else if (minDistanceFromAnyEdge >=
+        ZoneAnalyzer.MIN_EDGE_DISTANCE_FOOTPATH * 0.7) {
       return 70.0; // Acceptable but not ideal
-    } else if (minDistanceFromAnyEdge >= ZoneAnalyzer.MIN_EDGE_DISTANCE_FOOTPATH * 0.5) {
+    } else if (minDistanceFromAnyEdge >=
+        ZoneAnalyzer.MIN_EDGE_DISTANCE_FOOTPATH * 0.5) {
       return 40.0; // Poor - too close to edge
     } else {
       return 10.0; // Dangerous - very close to edge
     }
   }
 
-  static double _calculateRoadEdgeScore(ZoneAnalysisData zoneData, List<EdgeInfo> edges) {
+  static double _calculateRoadEdgeScore(
+      ZoneAnalysisData zoneData, List<EdgeInfo> edges) {
     EdgeAnalysisResult edgeAnalysis = zoneData.edgeAnalysis;
     double centerX = edgeAnalysis.centerPosition.dx;
-    
+
     double minDistanceFromAnyEdge = double.infinity;
-    
+
     for (EdgeInfo edge in edges) {
       double distancePixels = (centerX - edge.position).abs();
       double distanceMeters = CalibrationService.pixelsToMeters(distancePixels);
@@ -125,7 +148,8 @@ class DecisionEngine {
       return 100.0; // Excellent - close to road edge/shoulder
     } else if (minDistanceFromAnyEdge <= 1.0) {
       return 85.0; // Good - reasonably close to edge
-    } else if (minDistanceFromAnyEdge <= ZoneAnalyzer.MAX_DISTANCE_FROM_ROAD_EDGE) {
+    } else if (minDistanceFromAnyEdge <=
+        ZoneAnalyzer.MAX_DISTANCE_FROM_ROAD_EDGE) {
       return 70.0; // Acceptable
     } else {
       return 30.0; // Poor - too far from road edge (middle of road)
@@ -146,18 +170,58 @@ class DecisionEngine {
       ZoneAnalysisData correspondingFutureZone) {
     print(
         "DECISION_ENGINE: Applying future continuity from ${correspondingFutureZone.zoneId} to ${immediateZone.zoneId}");
-    
+
+    // NEW: Heavy penalty if future zone has obstacles
+    double futureNonWalkable = correspondingFutureZone
+            .classCoveragePercentage[PipelineClasses.nonWalkable] ??
+        0.0;
+    double futurePeople = correspondingFutureZone
+            .classCoveragePercentage[PipelineClasses.people] ??
+        0.0;
+
+    if (futureNonWalkable > 0.2 || futurePeople > 0.1) {
+      immediateZone.futureContinuityScore =
+          5.0; // Heavy penalty for future obstacles
+      return;
+    }
+
+    // NEW: Penalty for future edge violations
+    if (correspondingFutureZone.dominantWalkableSurface ==
+        PipelineClasses.footpath) {
+      double futureEdgeScore = correspondingFutureZone.edgeSafetyScore;
+      if (futureEdgeScore < 40.0) {
+        // Poor edge safety in future
+        immediateZone.futureContinuityScore =
+            20.0; // Penalty for future edge issues
+        return;
+      }
+    }
+
+    // Existing surface continuity logic
     if (immediateZone.dominantWalkableSurface == PipelineClasses.footpath &&
-        correspondingFutureZone.dominantWalkableSurface == PipelineClasses.footpath &&
-        (correspondingFutureZone.classCoveragePercentage[PipelineClasses.footpath] ?? 0.0) > 0.5) {
+        correspondingFutureZone.dominantWalkableSurface ==
+            PipelineClasses.footpath &&
+        (correspondingFutureZone
+                    .classCoveragePercentage[PipelineClasses.footpath] ??
+                0.0) >
+            0.5) {
       immediateZone.futureContinuityScore = 100.0; // Strong positive signal
-    } else if (immediateZone.dominantWalkableSurface != PipelineClasses.unknown &&
-        correspondingFutureZone.dominantWalkableSurface != PipelineClasses.unknown &&
-        immediateZone.dominantWalkableSurface != correspondingFutureZone.dominantWalkableSurface) {
-      immediateZone.futureContinuityScore = 30.0; // Surface change, less preferred
-    } else if (correspondingFutureZone.dominantWalkableSurface == PipelineClasses.unknown ||
-        (correspondingFutureZone.classCoveragePercentage[correspondingFutureZone.dominantWalkableSurface] ?? 0.0) < 0.2) {
-      immediateZone.futureContinuityScore = 10.0; // Path likely ends or becomes unclear
+    } else if (immediateZone.dominantWalkableSurface !=
+            PipelineClasses.unknown &&
+        correspondingFutureZone.dominantWalkableSurface !=
+            PipelineClasses.unknown &&
+        immediateZone.dominantWalkableSurface !=
+            correspondingFutureZone.dominantWalkableSurface) {
+      immediateZone.futureContinuityScore =
+          30.0; // Surface change, less preferred
+    } else if (correspondingFutureZone.dominantWalkableSurface ==
+            PipelineClasses.unknown ||
+        (correspondingFutureZone
+                    .classCoveragePercentage[PipelineClasses.unknown] ??
+                0.0) >
+            0.4) {
+      immediateZone.futureContinuityScore =
+          10.0; // Path likely ends or becomes unclear
     } else {
       immediateZone.futureContinuityScore = 60.0; // Default moderate continuity
     }
@@ -165,7 +229,6 @@ class DecisionEngine {
 
   static NavigationPipelineOutput generateNavigationCommands(
       Map<String, ZoneAnalysisData> allZoneData, String currentFocusZoneId) {
-    
     // Step 1: Calculate final scores for all zones
     allZoneData.forEach((_, zoneData) {
       calculateFinalScore(zoneData);
@@ -173,7 +236,9 @@ class DecisionEngine {
 
     // Step 2: Center preference logic
     List<String> immediateZoneIds = [
-      ZoneID.leftImmediate, ZoneID.centerImmediate, ZoneID.rightImmediate
+      ZoneID.leftImmediate,
+      ZoneID.centerImmediate,
+      ZoneID.rightImmediate
     ];
 
     ZoneAnalysisData? centerZone = allZoneData[ZoneID.centerImmediate];
@@ -195,7 +260,8 @@ class DecisionEngine {
     }
 
     // If center zone is still competitive, prefer it
-    if (centerZone != null && bestZone != null && 
+    if (centerZone != null &&
+        bestZone != null &&
         centerZone.finalScore >= bestZone.finalScore - 10.0) {
       bestZone = centerZone;
     }
@@ -205,14 +271,15 @@ class DecisionEngine {
     }
 
     // Step 3: Generate commands with edge awareness
-    NavigationCommand navCommand = _generateEdgeAwareCommand(bestZone, allZoneData);
-    
+    NavigationCommand navCommand =
+        _generateEdgeAwareCommand(bestZone, allZoneData);
+
     // Create zone analysis output
     Map<String, double> allScores = {};
     allZoneData.forEach((key, value) {
       allScores[key] = value.finalScore;
     });
-    
+
     ZoneAnalysisOutput zoneOutput = ZoneAnalysisOutput(
       currentBestZoneId: bestZone.zoneId,
       scores: allScores,
@@ -231,7 +298,7 @@ class DecisionEngine {
       closestDistance: bestZone.closestPersonDistanceMetres,
       clearanceAvailable: bestZone.arePeopleMarginsClear,
     );
-    
+
     EdgeDetectionContext edgeCtx = EdgeDetectionContext(
       footpathEdges: bestZone.edgeAnalysis.detectedEdges
           .where((e) => e.surfaceType == PipelineClasses.footpath)
@@ -240,13 +307,14 @@ class DecisionEngine {
       marginsAdequate: bestZone.edgeAnalysis.detectedEdges.isNotEmpty,
       minimumDistanceMaintained: _calculateMinEdgeDistance(bestZone),
     );
-    
+
     SurfaceQuality surfaceCtx = SurfaceQuality(
-      current: allZoneData[currentFocusZoneId]?.dominantWalkableSurface ?? PipelineClasses.unknown,
+      current: allZoneData[currentFocusZoneId]?.dominantWalkableSurface ??
+          PipelineClasses.unknown,
       target: navCommand.targetSurface,
       continuity: "good", // Simplified
     );
-    
+
     SafetyContext safetyCtx = SafetyContext(
         peopleDetected: peopleCtx,
         edgeDetection: edgeCtx,
@@ -254,7 +322,8 @@ class DecisionEngine {
 
     // Future Guidance
     String lookAhead = "path_continues";
-    ZoneAnalysisData? correspondingFutureZone = allZoneData[getCorrespondingFutureZoneId(bestZone.zoneId)];
+    ZoneAnalysisData? correspondingFutureZone =
+        allZoneData[getCorrespondingFutureZoneId(bestZone.zoneId)];
     if (correspondingFutureZone != null) {
       lookAhead = "${correspondingFutureZone.dominantWalkableSurface}_ahead";
     }
@@ -266,7 +335,8 @@ class DecisionEngine {
     );
 
     // Accessibility
-    String voiceCmd = "${navCommand.primaryAction.replaceAll('_', ' ')} for ${navCommand.targetSurface}";
+    String voiceCmd =
+        "${navCommand.primaryAction.replaceAll('_', ' ')} for ${navCommand.targetSurface}";
     if (navCommand.reason != "optimal_center_path") {
       voiceCmd += " - ${navCommand.reason.replaceAll('_', ' ')}";
     }
@@ -289,20 +359,19 @@ class DecisionEngine {
   static double _calculateMinEdgeDistance(ZoneAnalysisData zoneData) {
     EdgeAnalysisResult edgeAnalysis = zoneData.edgeAnalysis;
     double centerX = edgeAnalysis.centerPosition.dx;
-    
+
     double minDistance = double.infinity;
     for (EdgeInfo edge in edgeAnalysis.detectedEdges) {
       double distance = (centerX - edge.position).abs();
       double distanceMeters = CalibrationService.pixelsToMeters(distance);
       minDistance = min(minDistance, distanceMeters);
     }
-    
+
     return minDistance == double.infinity ? 0.0 : minDistance;
   }
 
   static NavigationCommand _generateEdgeAwareCommand(
       ZoneAnalysisData bestZone, Map<String, ZoneAnalysisData> allZoneData) {
-    
     String primaryAction = NavigationAction.continueCenter;
     String reason = "center_preferred";
     double angleAdjustment = 0.0;
@@ -310,21 +379,21 @@ class DecisionEngine {
     if (bestZone.zoneId == ZoneID.centerImmediate) {
       // Check if center zone needs edge adjustment
       EdgeAnalysisResult edgeAnalysis = bestZone.edgeAnalysis;
-      
-      if (!edgeAnalysis.touchesImageBoundary && edgeAnalysis.detectedEdges.isNotEmpty) {
+
+      if (!edgeAnalysis.touchesImageBoundary &&
+          edgeAnalysis.detectedEdges.isNotEmpty) {
         NavigationCommand? adjustment = _getEdgeAdjustmentCommand(bestZone);
         if (adjustment != null) {
           return adjustment;
         }
       }
-      
+
       primaryAction = NavigationAction.continueCenter;
       reason = "optimal_center_path";
-      
     } else if (bestZone.zoneId == ZoneID.leftImmediate) {
       ZoneAnalysisData? centerZone = allZoneData[ZoneID.centerImmediate];
       double scoreDiff = bestZone.finalScore - (centerZone?.finalScore ?? 0.0);
-      
+
       if (scoreDiff > 30.0) {
         primaryAction = NavigationAction.harshLeft;
         angleAdjustment = ANGLE_HARSH;
@@ -334,11 +403,10 @@ class DecisionEngine {
         angleAdjustment = ANGLE_SLIGHT;
         reason = "better_path_left";
       }
-      
     } else if (bestZone.zoneId == ZoneID.rightImmediate) {
       ZoneAnalysisData? centerZone = allZoneData[ZoneID.centerImmediate];
       double scoreDiff = bestZone.finalScore - (centerZone?.finalScore ?? 0.0);
-      
+
       if (scoreDiff > 30.0) {
         primaryAction = NavigationAction.harshRight;
         angleAdjustment = ANGLE_HARSH;
@@ -359,26 +427,28 @@ class DecisionEngine {
     );
   }
 
-  static NavigationCommand? _getEdgeAdjustmentCommand(ZoneAnalysisData zoneData) {
+  static NavigationCommand? _getEdgeAdjustmentCommand(
+      ZoneAnalysisData zoneData) {
     EdgeAnalysisResult edgeAnalysis = zoneData.edgeAnalysis;
     String surface = edgeAnalysis.dominantSurface;
-    
+
     if (surface == PipelineClasses.footpath) {
       return _getFootpathEdgeAdjustment(zoneData);
     } else if (surface == PipelineClasses.road) {
       return _getRoadEdgeAdjustment(zoneData);
     }
-    
+
     return null;
   }
 
-  static NavigationCommand? _getFootpathEdgeAdjustment(ZoneAnalysisData zoneData) {
+  static NavigationCommand? _getFootpathEdgeAdjustment(
+      ZoneAnalysisData zoneData) {
     EdgeAnalysisResult edgeAnalysis = zoneData.edgeAnalysis;
     double centerX = edgeAnalysis.centerPosition.dx;
-    
+
     EdgeInfo? closestEdge;
     double minDistance = double.infinity;
-    
+
     for (EdgeInfo edge in edgeAnalysis.detectedEdges) {
       double distance = (centerX - edge.position).abs();
       if (distance < minDistance) {
@@ -386,11 +456,11 @@ class DecisionEngine {
         closestEdge = edge;
       }
     }
-    
+
     if (closestEdge == null) return null;
-    
+
     double distanceMeters = CalibrationService.pixelsToMeters(minDistance);
-    
+
     if (distanceMeters < ZoneAnalyzer.MIN_EDGE_DISTANCE_FOOTPATH) {
       // Too close to edge - move away
       if (closestEdge.side == EdgeSide.left) {
@@ -411,17 +481,17 @@ class DecisionEngine {
         );
       }
     }
-    
+
     return null;
   }
 
   static NavigationCommand? _getRoadEdgeAdjustment(ZoneAnalysisData zoneData) {
     EdgeAnalysisResult edgeAnalysis = zoneData.edgeAnalysis;
     double centerX = edgeAnalysis.centerPosition.dx;
-    
+
     EdgeInfo? closestEdge;
     double minDistance = double.infinity;
-    
+
     for (EdgeInfo edge in edgeAnalysis.detectedEdges) {
       double distance = (centerX - edge.position).abs();
       if (distance < minDistance) {
@@ -429,11 +499,11 @@ class DecisionEngine {
         closestEdge = edge;
       }
     }
-    
+
     if (closestEdge == null) return null;
-    
+
     double distanceMeters = CalibrationService.pixelsToMeters(minDistance);
-    
+
     if (distanceMeters > ZoneAnalyzer.MAX_DISTANCE_FROM_ROAD_EDGE) {
       // Too far from edge - move closer to safer side
       if (closestEdge.side == EdgeSide.left) {
@@ -454,7 +524,7 @@ class DecisionEngine {
         );
       }
     }
-    
+
     return null;
   }
 
@@ -480,7 +550,7 @@ class DecisionEngine {
         confidence: 0.1,
         angleAdjustment: 0,
         reason: "no_safe_path_found");
-    
+
     return NavigationPipelineOutput(
         navigationCommand: navCmd,
         zoneAnalysis: ZoneAnalysisOutput(currentBestZoneId: "none", scores: {}),
