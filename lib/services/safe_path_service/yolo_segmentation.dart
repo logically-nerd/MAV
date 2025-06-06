@@ -125,8 +125,8 @@ class _YoloSegmentationState extends State<YoloSegmentation> {
                   task: widget.task,
                   onResult: _handleDetectionResults,
                   streamingConfig: YOLOStreamingConfig.custom(
-                    maxFPS: 1,
-                    inferenceFrequency: 1,
+                    maxFPS: 2,
+                    inferenceFrequency: 2,
                     includeMasks: true,
                   ),
                   onPerformanceMetrics: (metrics) {
