@@ -3,8 +3,8 @@ import 'package:flutter/services.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
 import '../tts_service.dart'; // Update import to use the centralized TTS service
 import 'confirmation_handler.dart';
-import 'navigation_handler.dart';
-import 'sos_service.dart';
+import '../navigation_handler.dart';
+import '../sos_service.dart';
 
 enum IntentType {
   navigate,

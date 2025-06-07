@@ -1,9 +1,9 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
-import '../tts_service.dart';
+import 'tts_service.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
-import '../map_service.dart';
+import 'map_service.dart';
 
 class NavigationHandler {
   static final NavigationHandler instance = NavigationHandler._internal();

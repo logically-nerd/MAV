@@ -2,7 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/gestures.dart';
 import '../services/conversation_service/conversation_service.dart';
-import '../services/conversation_service/sos_service.dart';
+import '../services/sos_service.dart';
 
 class IntentListenerWidget extends StatefulWidget {
   const IntentListenerWidget({Key? key}) : super(key: key);

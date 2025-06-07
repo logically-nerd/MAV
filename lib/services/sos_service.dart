@@ -1,6 +1,6 @@
 import 'dart:async';
 import 'package:flutter_phone_direct_caller/flutter_phone_direct_caller.dart';
-import '../tts_service.dart';
+import 'tts_service.dart';
 
 class SOSService {
   static final SOSService instance = SOSService._internal();
