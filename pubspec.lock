@@ -560,7 +560,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "4.9.0"
-<<<<<<< Updated upstream
   keep_screen_on:
     dependency: "direct main"
     description:
@@ -577,16 +576,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "3.0.0"
-  kotlin_scope_function:
-    dependency: transitive
-    description:
-      name: kotlin_scope_function
-      sha256: "73d53ae58e36ee44ae538411766091e8c2fb36054dc048c70d95cbf3aab3d85c"
-      url: "https://pub.dev"
-    source: hosted
-    version: "1.0.2"
-=======
->>>>>>> Stashed changes
   leak_tracker:
     dependency: transitive
     description:

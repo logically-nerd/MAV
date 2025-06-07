@@ -26,7 +26,7 @@ dependencies:
   google_places_flutter: ^2.1.0
   geolocator: ^14.0.0
   flutter_tts: ^4.2.2
-   
+
   camera: ^0.11.1
   web_socket_channel: ^3.0.3
   speech_to_text: ^7.0.0
