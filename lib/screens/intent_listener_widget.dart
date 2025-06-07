@@ -16,7 +16,7 @@ class _IntentListenerWidgetState extends State<IntentListenerWidget> {
   bool _isListening = false;
   double _circleSize = 100.0;
   Color buttonColor = Colors.green;
-  String buttonText = "Start Voice Command";
+  String buttonText = "Double Tap\nVoice Command";
 
   Timer? _tapTimer; // Timer to resolve tap conflicts
   int _tapCount = 0;
