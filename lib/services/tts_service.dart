@@ -5,7 +5,6 @@ import 'package:flutter_tts/flutter_tts.dart';
 // Defines the priority of speech requests. Lower index = higher priority.
 enum TtsPriority {
   sos, // Highest priority for emergencies
-  confirmation, // For critical user confirmations
   conversation, // Regular conversational feedback
   map, // Navigational instructions
   model, // For model-related instructions
@@ -76,8 +75,28 @@ class TtsService {
     });
   }
 
+  bool _blockLowPriority = false;
+
+  void blockLowPriority() {
+    _blockLowPriority = true;
+    // Only stop ongoing speech, don't clear high-priority queue items
+    if (_isSpeaking) {
+      _flutterTts.stop();
+    }
+  }
+
+  void unblockLowPriority() {
+    _blockLowPriority = false;
+  }
+
   // Add a speech request to the queue.
   void speak(String text, TtsPriority priority, {Function? onComplete}) {
+    if (_blockLowPriority &&
+        (priority == TtsPriority.map ||
+            priority == TtsPriority.model)) {
+      print("[TTS Service] Low priority request blocked during STT.");
+      return;
+    }
     print(
         "[TTS Service] Adding to queue: '$text' with priority ${priority.name}");
 

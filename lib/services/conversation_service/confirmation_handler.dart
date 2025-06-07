@@ -37,7 +37,7 @@ class ConfirmationHandler {
       if (attempts >= 2) {
         _ttsService.speak(
           "Still didn't catch that. Please double tap to speak again.",
-          TtsPriority.confirmation,
+          TtsPriority.conversation,
           onComplete: () => completer.complete(null),
         );
         return;
@@ -50,7 +50,7 @@ class ConfirmationHandler {
       // Speak, and in the onComplete callback, start listening. This is the key change.
       _ttsService.speak(
         message,
-        TtsPriority.confirmation,
+        TtsPriority.conversation,
         onComplete: () async {
           HapticFeedback.heavyImpact();
           final result = await _listenForAffirmation();

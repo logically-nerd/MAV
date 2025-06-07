@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:MAV/services/tts_service.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/gestures.dart';
 import '../services/conversation_service/conversation_service.dart';
@@ -35,6 +36,9 @@ class _IntentListenerWidgetState extends State<IntentListenerWidget> {
   Future<void> _startListening() async {
     if (_isListening) return;
 
+    // Stop any ongoing TTS before starting STT
+    TtsService.instance.blockLowPriority();
+
     setState(() {
       _isListening = true;
       buttonColor = Colors.blue;
@@ -44,6 +48,8 @@ class _IntentListenerWidgetState extends State<IntentListenerWidget> {
 
     print("[UI] Starting voice command...");
     await _conversationService.listenAndClassify();
+
+    TtsService.instance.unblockLowPriority(); // Unblock TTS after STT
 
     setState(() {
       _isListening = false;

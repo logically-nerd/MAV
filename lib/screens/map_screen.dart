@@ -951,7 +951,7 @@ class _MapScreenState extends State<MapScreen> {
     );
 
     // Use TTS service for initialization message
-    _ttsService.speak("Navigation system initialized", TtsPriority.map);
+    _ttsService.speak("Map initialized", TtsPriority.map);
   }
 
   @override
