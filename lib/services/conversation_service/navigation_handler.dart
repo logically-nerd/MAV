@@ -1,6 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:flutter_tts/flutter_tts.dart';
+import '../tts_service.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
 import '../map_service.dart';
@@ -9,7 +9,7 @@ class NavigationHandler {
   static final NavigationHandler instance = NavigationHandler._internal();
   factory NavigationHandler() => instance;
 
-  final FlutterTts _tts = FlutterTts();
+  final TtsService _ttsService = TtsService.instance;
   final stt.SpeechToText _speech = stt.SpeechToText();
   final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
@@ -24,22 +24,26 @@ class NavigationHandler {
   NavigationHandler._internal();
 
   Future<void> preload() async {
-    print("[NavigationHandler] Preloading TTS...");
-    await _tts.awaitSpeakCompletion(true);
-    _tts.setCompletionHandler(() => print("[TTS] Done speaking"));
+    print("[NavigationHandler] Preloading services...");
 
     bool available = await _speech.initialize();
     print("[NavigationHandler] STT available: $available");
   }
 
   Future<void> _speak(String message) async {
-    print("[TTS] Speaking: $message");
-    await _tts.stop();
-    await _tts.awaitSpeakCompletion(true);
-    await _tts.speak(message);
-    // Wait for TTS to complete
-    int waitTime = 500 + (message.length * 60);
-    await Future.delayed(Duration(milliseconds: waitTime));
+    print("[NavigationHandler] Speaking: $message");
+
+    // Create a completer to wait for speech completion
+    final completer = Completer<void>();
+
+    _ttsService.speak(message,
+        TtsPriority.map, // Use map priority for navigation instructions
+        onComplete: () {
+      completer.complete();
+    });
+
+    // Wait for speech to complete
+    await completer.future;
   }
 
   // Register callback functions from map_screen

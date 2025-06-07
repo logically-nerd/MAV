@@ -1,10 +1,12 @@
+import 'dart:async';
+
 import 'package:MAV/screens/sensor_screen/device_orientation.dart';
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
-import 'package:MAV/services/sensor_service/human_orientation_service.dart';
+import 'package:MAV/services/surrounding_awareness_service/human_orientation_service.dart';
 import 'package:vibration/vibration.dart';
-import 'package:flutter_tts/flutter_tts.dart';
-import 'package:MAV/services/sensor_service/sensor_websocket_service.dart';
+import 'package:MAV/services/tts_service.dart';
+import 'package:MAV/services/surrounding_awareness_service/sensor_websocket_service.dart';
 import 'dart:io';
 
 class CameraPreviewPage extends StatefulWidget {
@@ -26,40 +28,32 @@ class _CameraPreviewPageState extends State<CameraPreviewPage> {
   bool _isInitialized = false;
   String? _errorMessage;
   bool _hasVibration = false;
-  FlutterTts? _flutterTts;
+  final TtsService _ttsService = TtsService.instance;
   List<CapturedAnglePhoto> _capturedAnglePhotos = [];
   final List<int> _targetAngles = [0, 90, 180, 270];
   final Set<int> _capturedAngles = {};
   bool _orientationConfirmed = false;
-  bool _isShowingOrientationScreen = false; // Prevent multiple orientation screens
+  bool _isShowingOrientationScreen =
+      false; // Prevent multiple orientation screens
   late SensorWebSocketService _wsService;
 
   bool _isCapturing = false;
   bool _isSpeaking = false; // Prevent TTS overlapping
+
   @override
   void initState() {
     super.initState();
-    _flutterTts = FlutterTts();
-    _setupTts();
     _checkVibrationAvailability();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      _speak('Please rotate the device in a clockwise direction to start capturing.');
+      _speak(
+          'Please rotate the device in a clockwise direction to start capturing.');
     });
-     
+
     // For a real device via USB, use your laptop's actual local IP address.
     // Make sure your server is listening on 0.0.0.0 and your firewall allows the connection.
     _wsService = SensorWebSocketService(serverUrl: 'ws://192.168.231.31:8765');
     _wsService.connect();
     _initializeCamera();
-  }
-
-  Future<void> _setupTts() async {
-    if (_flutterTts != null) {
-      await _flutterTts!.setLanguage("en-US");
-      await _flutterTts!.setSpeechRate(0.4);
-      await _flutterTts!.setVolume(1.0);
-      await _flutterTts!.setPitch(1.0);
-    }
   }
 
   Future<void> _checkVibrationAvailability() async {
@@ -84,16 +78,21 @@ class _CameraPreviewPageState extends State<CameraPreviewPage> {
       print('DEBUG: Vibration error: $e');
     }
   }
+
   Future<void> _speak(String message) async {
-    if (_flutterTts != null && !_isSpeaking) {
+    if (!_isSpeaking) {
       _isSpeaking = true;
-      try {
-        await _flutterTts!.speak(message);
-        // Wait for speech to complete
-        await Future.delayed(Duration(milliseconds: message.length * 100 + 1000));
-      } finally {
+
+      // Create a completer to wait for speech completion
+      final completer = Completer<void>();
+
+      _ttsService.speak(message, TtsPriority.conversation, onComplete: () {
         _isSpeaking = false;
-      }
+        completer.complete();
+      });
+
+      // Wait for speech to complete
+      await completer.future;
     }
   }
 
@@ -138,8 +137,8 @@ class _CameraPreviewPageState extends State<CameraPreviewPage> {
 
       // Initialize rotation detector after camera is ready
       _rotationDetector = RotationDetector();
-      try {       
-         _rotationDetector!.startListening(
+      try {
+        _rotationDetector!.startListening(
           onRotated90Degrees: () async {
             int? angle = _rotationDetector!.currentAngle;
             print('[DEBUG] Rotation detected at angle: $angle');
@@ -147,15 +146,16 @@ class _CameraPreviewPageState extends State<CameraPreviewPage> {
               print('[DEBUG] Already captured 4 photos, skipping');
               return;
             }
-            if (angle != null && _targetAngles.contains(angle) && !_capturedAngles.contains(angle)) {
-              
+            if (angle != null &&
+                _targetAngles.contains(angle) &&
+                !_capturedAngles.contains(angle)) {
               // Check if we need to show orientation screen and it's not already showing
               if (!_orientationConfirmed && !_isShowingOrientationScreen) {
                 print('[DEBUG] Showing orientation screen for stability check');
                 _isShowingOrientationScreen = true;
                 bool isStable = await _showOrientationScreen();
                 _isShowingOrientationScreen = false;
-                
+
                 if (!isStable) {
                   print('[DEBUG] Device not stable, skipping photo capture');
                   await _speak('Device not stable. Please try again.');
@@ -163,15 +163,17 @@ class _CameraPreviewPageState extends State<CameraPreviewPage> {
                 }
                 _orientationConfirmed = true;
               }
-              
+
               _capturedAngles.add(angle);
               await _vibrate();
               print('[DEBUG] Capturing photo at angle: $angle');
               await _capturePhoto(angle: angle.toDouble());
               int remaining = 4 - _capturedAnglePhotos.length;
               if (remaining > 0) {
-                print('[DEBUG] Photo captured at $angle degrees. $remaining more to go.');
-                await _speak('Photo captured at $angle degrees. $remaining more to go. Please rotate to the next position.');
+                print(
+                    '[DEBUG] Photo captured at $angle degrees. $remaining more to go.');
+                await _speak(
+                    'Photo captured at $angle degrees. $remaining more to go. Please rotate to the next position.');
               } else {
                 print('[DEBUG] All 4 photos captured.');
                 await _speak('All 4 photos captured. Thank you.');
@@ -226,7 +228,8 @@ class _CameraPreviewPageState extends State<CameraPreviewPage> {
       // Add to state only after successful capture
       if (angle != null && _capturedAnglePhotos.length < 4) {
         setState(() {
-          _capturedAnglePhotos.add(CapturedAnglePhoto(angle: angle, photoPath: photo.path));
+          _capturedAnglePhotos
+              .add(CapturedAnglePhoto(angle: angle, photoPath: photo.path));
           _capturedAngles.add(angle.toInt());
         });
       }
@@ -237,15 +240,16 @@ class _CameraPreviewPageState extends State<CameraPreviewPage> {
       // Send image via WebSocket (await to ensure completion)
       try {
         final fileBytes = await File(photo.path).readAsBytes();
-        print('[DEBUG] Sending image to websocket, bytes: ${fileBytes.length}, angle: $angle');
+        print(
+            '[DEBUG] Sending image to websocket, bytes: ${fileBytes.length}, angle: $angle');
         if (angle != null) {
-          await _wsService.sendImageWithAngle(fileBytes, angle); // Ensure this is awaited
+          await _wsService.sendImageWithAngle(
+              fileBytes, angle); // Ensure this is awaited
         }
       } catch (e) {
         print('[DEBUG] Error sending image via websocket: $e');
         await _speak('Failed to send photo');
       }
-
     } catch (e) {
       print('[DEBUG] Failed to capture photo: $e');
       await _speak('Failed to capture photo');
@@ -268,11 +272,11 @@ class _CameraPreviewPageState extends State<CameraPreviewPage> {
   List<CapturedAnglePhoto> getCapturedAnglePhotos() {
     return List.unmodifiable(_capturedAnglePhotos);
   }
+
   @override
   void dispose() {
     _cameraController?.dispose();
     _rotationDetector?.dispose();
-    _flutterTts?.stop();
     _isSpeaking = false;
     _wsService.disconnect();
     super.dispose();
@@ -318,7 +322,8 @@ class _CameraPreviewPageState extends State<CameraPreviewPage> {
               padding: const EdgeInsets.symmetric(horizontal: 16.0),
               child: Text(
                 '${_capturedAnglePhotos.length}/4 Photos',
-                style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                style:
+                    const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
               ),
             ),
           ),
@@ -339,7 +344,8 @@ class _CameraPreviewPageState extends State<CameraPreviewPage> {
               children: [
                 Text(
                   'Captured Angles: ${_capturedAngles.toList().join(', ')}',
-                  style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                  style: const TextStyle(
+                      fontSize: 16, fontWeight: FontWeight.bold),
                 ),
                 const SizedBox(height: 8),
                 Text(

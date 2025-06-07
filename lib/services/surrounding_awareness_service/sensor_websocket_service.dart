@@ -2,24 +2,28 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
 import 'package:web_socket_channel/web_socket_channel.dart';
-import 'package:flutter_tts/flutter_tts.dart';
+import '../tts_service.dart';
 
 class SensorWebSocketService {
   final String serverUrl;
   WebSocketChannel? _channel;
   bool _isConnected = false;
-  final FlutterTts _tts = FlutterTts();
+  final TtsService _ttsService = TtsService.instance;
 
   SensorWebSocketService({required this.serverUrl});
 
   Future<void> connect() async {
     try {
       _channel = WebSocketChannel.connect(Uri.parse(serverUrl));
-      _isConnected = true;      // Listen for messages or errors
+      _isConnected = true;
+
+      // Listen for messages or errors
       _channel!.stream.listen((message) async {
         try {
           final response = jsonDecode(message);
-          if (response is Map && response['status'] == 'success' && response.containsKey('all_angles')) {
+          if (response is Map &&
+              response['status'] == 'success' &&
+              response.containsKey('all_angles')) {
             final allAngles = response['all_angles'] as List;
             await _speakAllDirectionsResults(allAngles);
           }
@@ -78,10 +82,19 @@ class SensorWebSocketService {
   }
 
   Future<void> _speakConnectionError() async {
-    await _tts.setLanguage("en-US");
-    await _tts.setSpeechRate(0.35);
-    await _tts.speak("Unable to tell surrounding awareness");
+    // Create a completer to wait for speech completion
+    final completer = Completer<void>();
+
+    _ttsService
+        .speak("Unable to tell surrounding awareness", TtsPriority.conversation,
+            onComplete: () {
+      completer.complete();
+    });
+
+    // Wait for speech to complete
+    await completer.future;
   }
+
   Future<void> _speakAllDirectionsResults(List allAngles) async {
     Map<String, List<String>> directionObjects = {
       'front': [],
@@ -95,10 +108,11 @@ class SensorWebSocketService {
       final angle = angleResult['angle'];
       final detectionResults = angleResult['detection_results'];
       String position = _angleToPosition(angle);
-      
+
       if (detectionResults != null && detectionResults['objects'] is List) {
         final objects = detectionResults['objects'] as List;
-        final objectNames = objects.map((o) => o['class_name'] as String).toSet().toList();
+        final objectNames =
+            objects.map((o) => o['class_name'] as String).toSet().toList();
         if (objectNames.isNotEmpty) {
           directionObjects[position]?.addAll(objectNames);
         }
@@ -107,7 +121,7 @@ class SensorWebSocketService {
 
     // Build comprehensive announcement
     List<String> announcements = [];
-    
+
     directionObjects.forEach((direction, objects) {
       if (objects.isNotEmpty) {
         String objectList = objects.toSet().join(', ');
@@ -118,11 +132,19 @@ class SensorWebSocketService {
     });
 
     // Speak the complete results
-    String fullAnnouncement = 'Surrounding awareness complete. ${announcements.join('. ')}.';
-    
-    await _tts.setLanguage("en-US");
-    await _tts.setSpeechRate(0.4);
-    await _tts.speak(fullAnnouncement);
+    String fullAnnouncement =
+        'Surrounding awareness complete. ${announcements.join('. ')}.';
+
+    // Create a completer to wait for speech completion
+    final completer = Completer<void>();
+
+    _ttsService.speak(fullAnnouncement, TtsPriority.conversation,
+        onComplete: () {
+      completer.complete();
+    });
+
+    // Wait for speech to complete
+    await completer.future;
   }
 
   void disconnect() {

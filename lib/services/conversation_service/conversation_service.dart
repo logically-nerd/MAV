@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'package:flutter/services.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
-import 'package:flutter_tts/flutter_tts.dart';
+import '../tts_service.dart'; // Update import to use the centralized TTS service
 import 'confirmation_handler.dart';
 import 'navigation_handler.dart';
 import 'sos_service.dart';
@@ -28,7 +28,12 @@ class ConversationService {
   factory ConversationService() => instance;
 
   final stt.SpeechToText _speech = stt.SpeechToText();
-  final FlutterTts _tts = FlutterTts();
+  // Remove the local FlutterTts instance
+  // final FlutterTts _tts = FlutterTts();
+
+  // Use the centralized TTS service
+  final TtsService _ttsService = TtsService.instance;
+
   final SOSService _sosService = SOSService.instance;
   final NavigationHandler _navigationHandler = NavigationHandler.instance;
   final ConfirmationHandler _confirmationHandler = ConfirmationHandler();
@@ -57,8 +62,8 @@ class ConversationService {
     bool available = await _speech.initialize();
     print("[Conversation] Speech available: $available");
 
-    _tts.setCompletionHandler(() => print("[TTS] Done speaking"));
-    await _tts.awaitSpeakCompletion(true);
+    // Initialize the TTS service
+    await _ttsService.init();
 
     // Preload other handlers
     await _confirmationHandler.preload();
@@ -68,17 +73,20 @@ class ConversationService {
     print("[Conversation] All services initialized");
   }
 
+  // Update _speak to use the centralized TTS service with proper priority
   Future<void> _speak(String message) async {
-    await _tts.stop();
-    print("[TTS] Speaking: $message");
-    await _tts.awaitSpeakCompletion(true);
-    await _tts.speak(message);
-    // Wait for TTS to complete with a proper delay
-    try {
-      await Future.delayed(const Duration(milliseconds: 500));
-    } catch (e) {
-      print("[TTS] Error waiting for completion: $e");
-    }
+    print("[Conversation] Speaking: $message");
+
+    // Create a completer to wait for speech completion
+    Completer<void> completer = Completer<void>();
+
+    // Use the TTS service with conversation priority and completion callback
+    _ttsService.speak(message, TtsPriority.conversation, onComplete: () {
+      completer.complete();
+    });
+
+    // Wait for speech to complete
+    await completer.future;
   }
 
   Future<void> _feedbackStart() async {
@@ -108,7 +116,7 @@ class ConversationService {
     }
 
     await _feedbackStart();
-    await Future.delayed(const Duration(milliseconds: 300));
+    // No need for manual delay, the TTS completion callback handles this
 
     Completer<IntentResult?> completer = Completer();
     bool resultHandled = false;
@@ -152,6 +160,14 @@ class ConversationService {
 
           // Prioritize SOS commands
           if (_matchesSOS(transcript)) {
+            // Use SOS priority for emergency communications
+            Completer<void> sosCompleter = Completer<void>();
+            _ttsService.speak("Emergency detected. Calling emergency services.",
+                TtsPriority.sos, onComplete: () {
+              sosCompleter.complete();
+            });
+            await sosCompleter.future;
+
             await _sosService.triggerSOS();
             completer.complete(null);
             _isListening = false;
@@ -192,25 +208,25 @@ class ConversationService {
 
             completer.complete(intent);
             _isListening = false;
-            return;          
-            } 
-            else if (intent.intent == IntentType.awareness) {
+            return;
+          } else if (intent.intent == IntentType.awareness) {
             // Handle awareness intent
             final confirmed = await _confirmationHandler.confirmAwareness();
 
             if (confirmed == true) {
               print("[Conversation] Awareness confirmed");
-              await _speak("Starting human orientation screen for surroundings analysis.");
-              
+              await _speak(
+                  "Starting human orientation screen for surroundings analysis.");
+
               // Check if callback is registered
               if (isAwarenessCallbackRegistered()) {
                 print("[ConversationService] Calling human orientation screen");
                 onShowHumanOrientationScreen!();
               } else {
                 print("[ConversationService] No awareness callback registered");
-                await _speak("I'm not ready to handle awareness commands yet. Please try again in a moment.");
+                await _speak(
+                    "I'm not ready to handle awareness commands yet. Please try again in a moment.");
               }
-               
             } else {
               print("[Conversation] Awareness canceled by user");
               await _speak("Awareness check canceled.");

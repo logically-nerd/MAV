@@ -1,9 +1,11 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:flutter_tts/flutter_tts.dart';
+// Remove this import
+// import 'package:flutter_tts/flutter_tts.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import '../services/map_service.dart';
 import '../services/conversation_service/navigation_handler.dart';
+import '../services/tts_service.dart'; // Add this import
 import 'dart:math';
 
 class MapScreen extends StatefulWidget {
@@ -14,6 +16,10 @@ class MapScreen extends StatefulWidget {
 }
 
 class _MapScreenState extends State<MapScreen> {
+  // Replace the local FlutterTts with our TTS service
+  // final FlutterTts _tts = FlutterTts();
+  final TtsService _ttsService = TtsService.instance;
+
   final Completer<GoogleMapController> _mapController =
       Completer<GoogleMapController>();
 
@@ -35,8 +41,6 @@ class _MapScreenState extends State<MapScreen> {
   Timer? _navigationTimer;
   double _distanceToDestination = 0.0; // in meters
   bool _hasAnnouncedNextTurn = false;
-
-  final FlutterTts _tts = FlutterTts();
 
   // Add these variables to keep track of direction
   double _previousDistanceToDestination = 0.0;
@@ -60,19 +64,20 @@ class _MapScreenState extends State<MapScreen> {
     debugPrint('MAP_NAV: Speaking - $instruction');
 
     try {
-      // Stop any previous speech
-      await _tts.stop();
+      // Create a completer to wait for speech completion
+      Completer<void> completer = Completer<void>();
 
-      // Add a small delay to ensure previous speech has stopped
-      await Future.delayed(const Duration(milliseconds: 100));
-
-      // Speak with error handling and result checking
-      int result = await _tts.speak(instruction);
-      debugPrint('MAP_NAV: TTS speak result: $result');
+      // Use the centralized TTS service with map priority
+      _ttsService.speak(
+        instruction,
+        TtsPriority.map,
+        onComplete: () {
+          completer.complete();
+        },
+      );
 
       // Wait for speech to complete
-      await Future.delayed(
-          Duration(milliseconds: 500 + (instruction.length * 50)));
+      await completer.future;
     } catch (e) {
       debugPrint('MAP_NAV: TTS error: $e');
     }
@@ -85,23 +90,15 @@ class _MapScreenState extends State<MapScreen> {
 
     // Wait to initialize navigation systems until map is ready
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      // Initialize TTS with better error handling
+      // Initialize TTS
       _initializeTTS();
     });
   }
 
   Future<void> _initializeTTS() async {
     try {
-      await _tts.setLanguage("en-US");
-      await _tts.setSpeechRate(0.5); // Slower rate for better clarity
-      await _tts.setVolume(1.0); // Full volume
-      await _tts.setPitch(1.0); // Normal pitch
-      await _tts.awaitSpeakCompletion(true);
-
-      _tts.setCompletionHandler(() {
-        debugPrint('MAP_NAV: TTS completed');
-      });
-
+      // Initialize the TTS service if not already initialized
+      await _ttsService.init();
       debugPrint('MAP_NAV: TTS initialization complete');
     } catch (e) {
       debugPrint('MAP_NAV: Error initializing TTS: $e');
@@ -113,7 +110,8 @@ class _MapScreenState extends State<MapScreen> {
     _debounce?.cancel();
     _navigationTimer?.cancel();
     _searchController.dispose();
-    _tts.stop();
+    // Remove direct TTS stop call - no longer needed
+    // _tts.stop();
     super.dispose();
   }
 
@@ -565,7 +563,7 @@ class _MapScreenState extends State<MapScreen> {
       ),
     );
 
-    // Speak the warning
+    // Speak the warning with higher priority
     _speakDirections(
         "You're going in the wrong direction. Please $directionText");
   }
@@ -952,7 +950,8 @@ class _MapScreenState extends State<MapScreen> {
       },
     );
 
-    _tts.speak("Navigation system initialized");
+    // Use TTS service for initialization message
+    _ttsService.speak("Navigation system initialized", TtsPriority.map);
   }
 
   @override

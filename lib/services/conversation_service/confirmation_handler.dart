@@ -1,64 +1,78 @@
-// confirmation_handler.dart
 import 'dart:async';
-import 'package:speech_to_text/speech_to_text.dart' as stt;
-import 'package:flutter_tts/flutter_tts.dart';
+import 'package:MAV/services/tts_service.dart';
 import 'package:flutter/services.dart';
+import 'package:speech_to_text/speech_to_text.dart' as stt;
 
 class ConfirmationHandler {
   final stt.SpeechToText _speech = stt.SpeechToText();
-  final FlutterTts _tts = FlutterTts();
+  // REMOVED: final FlutterTts _tts = FlutterTts();
+  final TtsService _ttsService = TtsService.instance; // ADDED: Use the service
 
   Future<void> preload() async {
     print("[Confirm] Preloading STT...");
-    bool available = await _speech.initialize();
-    print("[Confirm] STT available: $available");
-
-    _tts.setCompletionHandler(() => print("[TTS] Done speaking"));
-    await _tts.awaitSpeakCompletion(true);
+    await _speech.initialize();
+    // REMOVED: TTS preload logic is now centralized
   }
 
   Future<bool?> confirmDestination(String destination) async {
     print("[Confirm] Asking for confirmation: $destination");
-    await _tts.speak("You said navigate to $destination. Should I go ahead?");
-    await Future.delayed(const Duration(milliseconds: 300));
-    return _handleConfirmation();
+    // Use the TtsService with a callback to listen AFTER speaking
+    return _askAndListen(
+        "You said navigate to $destination. Should I go ahead?");
   }
 
   Future<bool?> confirmAwareness() async {
     print("[Confirm] Confirming awareness intent");
-    await _tts.speak("You asked for surrounding awareness. Is that correct?");
-    await Future.delayed(const Duration(milliseconds: 300));
-    return _handleConfirmation();
+    // Use the TtsService with a callback to listen AFTER speaking
+    return _askAndListen(
+        "You asked for surrounding awareness. Is that correct?");
   }
 
-  Future<bool?> _handleConfirmation() async {
+  // NEW: Centralized method to speak and then listen for confirmation
+  Future<bool?> _askAndListen(String question) async {
+    Completer<bool?> completer = Completer();
     int attempts = 0;
 
-    while (attempts < 2) {
-      HapticFeedback.heavyImpact();
-      print("[Confirm] Listening attempt: $attempts");
-
-      bool available = await _speech.initialize();
-      print("[Confirm] STT ready: $available");
-      if (!available) return null;
-
-      final result = await _listenForAffirmation();
-      print("[Confirm] Result: $result");
-
-      if (result != null) return result;
+    void ask() {
+      if (attempts >= 2) {
+        _ttsService.speak(
+          "Still didn't catch that. Please double tap to speak again.",
+          TtsPriority.confirmation,
+          onComplete: () => completer.complete(null),
+        );
+        return;
+      }
 
       attempts++;
-      if (attempts < 2) {
-        await _tts.speak("Sorry, I didn't catch that. Please say it again.");
-      }
+      String message =
+          (attempts > 1) ? "Sorry, I didn't catch that. $question" : question;
+
+      // Speak, and in the onComplete callback, start listening. This is the key change.
+      _ttsService.speak(
+        message,
+        TtsPriority.confirmation,
+        onComplete: () async {
+          HapticFeedback.heavyImpact();
+          final result = await _listenForAffirmation();
+          if (result != null) {
+            completer.complete(result);
+          } else {
+            // If listening failed, ask again
+            ask();
+          }
+        },
+      );
     }
 
-    await _tts
-        .speak("Still didn't catch that. Please double tap to speak again.");
-    return null;
+    ask(); // Start the first attempt
+    return completer.future;
   }
 
+  // This method no longer needs to handle TTS retries
   Future<bool?> _listenForAffirmation() async {
+    bool available = await _speech.initialize();
+    if (!available) return null;
+
     Completer<bool?> completer = Completer();
 
     _speech.listen(
@@ -66,25 +80,26 @@ class ConfirmationHandler {
       pauseFor: const Duration(seconds: 4),
       listenFor: const Duration(seconds: 10),
       onResult: (result) {
-        final transcript = result.recognizedWords.toLowerCase().trim();
-        print("[Confirm] Heard: $transcript");
-
-        if (result.finalResult) {
-          if (transcript.isEmpty) {
+        if (result.finalResult && !completer.isCompleted) {
+          final transcript = result.recognizedWords.toLowerCase().trim();
+          if (transcript.isEmpty)
             completer.complete(null);
-          } else if (_isAffirmative(transcript)) {
+          else if (_isAffirmative(transcript))
             completer.complete(true);
-          } else if (_isNegative(transcript)) {
+          else if (_isNegative(transcript))
             completer.complete(false);
-          } else {
+          else
             completer.complete(null);
-          }
         }
       },
     );
 
+    // Timeout for the listening part
     Future.delayed(const Duration(seconds: 6), () {
-      if (!completer.isCompleted) completer.complete(null);
+      if (!completer.isCompleted) {
+        _speech.stop();
+        completer.complete(null);
+      }
     });
 
     return completer.future;
@@ -100,7 +115,6 @@ class ConfirmationHandler {
         "go ahead",
         "do it"
       ].any((w) => input.contains(w));
-
   bool _isNegative(String input) => [
         "no",
         "nope",

@@ -4,14 +4,15 @@ import 'package:MAV/services/safe_path_service/calibration_service.dart';
 import 'package:MAV/services/safe_path_service/pipeline_controller.dart';
 import 'package:MAV/services/safe_path_service/pipeline_models.dart';
 import 'package:MAV/services/safe_path_service/yolo_segmentation.dart';
+import 'package:MAV/services/tts_service.dart';
 import 'package:flutter/material.dart';
 import 'package:keep_screen_on/keep_screen_on.dart';
-import 'package:ultralytics_yolo/yolo_view.dart';
-import 'screens/sensor_screen/device_orientation.dart';
+// import 'package:ultralytics_yolo/yolo_view.dart';
+// import 'screens/sensor_screen/device_orientation.dart';
 import 'package:MAV/screens/intent_listener_widget.dart';
-import 'screens/sensor_screen/device_orientation.dart';
+// import 'screens/sensor_screen/device_orientation.dart';
 import 'package:camera/camera.dart';
-import 'screens/yoloe_screen/websocket_client_yoloe.dart';
+// import 'screens/yoloe_screen/websocket_client_yoloe.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:permission_handler/permission_handler.dart';
@@ -19,7 +20,6 @@ import 'package:geolocator/geolocator.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
 import 'package:ultralytics_yolo/yolo_result.dart';
 import 'package:ultralytics_yolo/yolo_task.dart';
-import 'package:flutter_tts/flutter_tts.dart'; // Add TTS import
 import 'dart:async'; // Add for Timer
 
 Future<void> main() async {
@@ -51,6 +51,8 @@ Future<void> main() async {
   } else {
     print("No cameras available for calibration");
   }
+  // Initialize the centralized TTS service ONCE
+  await TtsService.instance.init();
   runApp(const MyApp());
 }
 
@@ -143,9 +145,10 @@ class _HomePageState extends State<HomePage> {
   NavigationPipelineOutput?
       _latestPipelineOutput; // To store and display output
 
-  // TTS Integration
-  late FlutterTts _flutterTts;
-  bool _isTtsInitialized = false;
+  // Replace FlutterTts with the centralized service
+  // late FlutterTts _flutterTts;
+  final TtsService _ttsService = TtsService.instance;
+
   bool _isModelReady = false;
   String? _lastCommand;
   DateTime? _lastPromptTime;
@@ -157,40 +160,31 @@ class _HomePageState extends State<HomePage> {
   void initState() {
     super.initState();
     _pipelineController = NavigationPipelineController();
-    _initializeTts();
+    // Remove the local TTS initialization
+    // _initializeTts();
     print("HomePage: NavigationPipelineController initialized.");
   }
 
   @override
   void dispose() {
-    super.dispose();
     _periodicTimer?.cancel();
-    _flutterTts.stop();
+    // Remove direct TTS stop call - it's handled by the service
+    // _flutterTts.stop();
     KeepScreenOn.turnOff();
+    super.dispose();
   }
 
-  Future<void> _initializeTts() async {
-    _flutterTts = FlutterTts();
-
-    // Configure TTS settings
-    await _flutterTts.setLanguage('en-US');
-    await _flutterTts.setSpeechRate(0.8);
-    await _flutterTts.setVolume(0.8);
-    await _flutterTts.setPitch(1.0);
-
-    _isTtsInitialized = true;
-    print('TTS initialized');
-  }
+  // Remove this method as we're using the centralized service
+  // Future<void> _initializeTts() async {...}
 
   Future<void> _speakModelReady() async {
-    if (!_isTtsInitialized) await _initializeTts();
-    await _flutterTts.speak("Navigation model is ready and running");
+    // Use the centralized TTS service with proper priority
+    _ttsService.speak(
+        "Navigation model is ready and running", TtsPriority.model);
     print('TTS: Navigation model is ready and running');
   }
 
   Future<void> _speakNavigationCommand(String command) async {
-    if (!_isTtsInitialized) await _initializeTts();
-
     DateTime now = DateTime.now();
     bool shouldSpeak = false;
 
@@ -208,7 +202,9 @@ class _HomePageState extends State<HomePage> {
     if (shouldSpeak) {
       _lastPromptTime = now;
       String spokenText = _formatCommandForSpeech(command);
-      await _flutterTts.speak(spokenText);
+
+      // Use the centralized TTS service with proper priority
+      _ttsService.speak(spokenText, TtsPriority.model);
       print('TTS: $spokenText');
     }
   }

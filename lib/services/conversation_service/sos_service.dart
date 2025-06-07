@@ -1,32 +1,40 @@
 import 'dart:async';
 import 'package:flutter_phone_direct_caller/flutter_phone_direct_caller.dart';
-import 'package:flutter_tts/flutter_tts.dart';
+import '../tts_service.dart';
 
 class SOSService {
   static final SOSService instance = SOSService._internal();
   factory SOSService() => instance;
 
-  final FlutterTts _tts = FlutterTts();
+  final TtsService _ttsService = TtsService.instance;
   final emergencyNumber = "112"; // Emergency number
 
   SOSService._internal();
 
   Future<void> preload() async {
-    print("[SOS] Preloading TTS...");
-    await _tts.awaitSpeakCompletion(true);
-    _tts.setCompletionHandler(() => print("[TTS] Done speaking"));
+    print("[SOS] Preloading services...");
   }
 
   Future<void> triggerSOS() async {
-    // Speak out the emergency message
-    await _tts.speak("Emergency detected. Calling $emergencyNumber now.");
+    // Speak out the emergency message with highest priority
+    final completer = Completer<void>();
+
+    _ttsService.speak(
+        "Emergency detected. Calling $emergencyNumber now.", TtsPriority.sos,
+        onComplete: () {
+      completer.complete();
+    });
+
+    // Wait for the initial message to complete
+    await completer.future;
 
     // Launch the emergency call directly
     bool? callMade = await FlutterPhoneDirectCaller.callNumber(emergencyNumber);
+
     if (callMade == true) {
-      _tts.speak("Emergency call initiated.");
+      _ttsService.speak("Emergency call initiated.", TtsPriority.sos);
     } else {
-      _tts.speak("Failed to initiate emergency call.");
+      _ttsService.speak("Failed to initiate emergency call.", TtsPriority.sos);
     }
   }
 }
