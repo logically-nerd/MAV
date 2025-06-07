@@ -6,6 +6,7 @@ import 'package:flutter_tts/flutter_tts.dart';
 enum TtsPriority {
   sos, // Highest priority for emergencies
   conversation, // Regular conversational feedback
+  orientation, // For orientation-related instructions
   map, // Navigational instructions
   model, // For model-related instructions
 }
@@ -92,8 +93,7 @@ class TtsService {
   // Add a speech request to the queue.
   void speak(String text, TtsPriority priority, {Function? onComplete}) {
     if (_blockLowPriority &&
-        (priority == TtsPriority.map ||
-            priority == TtsPriority.model)) {
+        (priority == TtsPriority.map || priority == TtsPriority.model || priority == TtsPriority.orientation)) {
       print("[TTS Service] Low priority request blocked during STT.");
       return;
     }

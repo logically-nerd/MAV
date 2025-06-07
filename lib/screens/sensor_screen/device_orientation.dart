@@ -86,7 +86,7 @@ class _DeviceOrientationScreenState extends State<DeviceOrientationScreen> {
       // Create a completer to wait for speech completion
       final completer = Completer<void>();
 
-      _ttsService.speak(text, TtsPriority.confirmation, onComplete: () {
+      _ttsService.speak(text, TtsPriority.orientation, onComplete: () {
         _isSpeaking = false;
         completer.complete();
       });
