@@ -17,7 +17,7 @@ class _IntentListenerWidgetState extends State<IntentListenerWidget> {
   bool _isListening = false;
   double _circleSize = 100.0;
   Color buttonColor = Colors.green;
-  String buttonText = "Double Tap\nVoice Command";
+  String buttonText = "Double Tap\nCommand";
 
   Timer? _tapTimer; // Timer to resolve tap conflicts
   int _tapCount = 0;
@@ -65,9 +65,6 @@ class _IntentListenerWidgetState extends State<IntentListenerWidget> {
       SOSService.instance.triggerSOS();
     } else if (count == 2) {
       print('[UI] Double tap detected. Starting voice command.');
-      _startListening();
-    } else if (count == 1) {
-      print('[UI] Single tap detected. Starting voice command.');
       _startListening();
     }
   }

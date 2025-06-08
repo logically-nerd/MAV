@@ -36,8 +36,10 @@ class NavigationHandler {
     // Create a completer to wait for speech completion
     final completer = Completer<void>();
 
-    _ttsService.speak(message,
-        TtsPriority.map, // Use map priority for navigation instructions
+    _ttsService.speak(
+        message,
+        TtsPriority
+            .conversation, // Use conversation priority for navigation instructions
         onComplete: () {
       completer.complete();
     });

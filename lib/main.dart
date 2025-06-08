@@ -154,7 +154,7 @@ class _HomePageState extends State<HomePage> {
   DateTime? _lastPromptTime;
   Timer? _periodicTimer;
 
-  static const Duration PERIODIC_INTERVAL = Duration(seconds: 5);
+  static const Duration PERIODIC_INTERVAL = Duration(seconds: 7);
 
   @override
   void initState() {
@@ -404,12 +404,13 @@ class _HomePageState extends State<HomePage> {
             children: [
               Expanded(
                 flex: 4,
-                child: YoloSegmentation(
-                  modelAssetPath: 'assets/models/v11_best_float32.tflite',
-                  task: YOLOTask.segment,
-                  showControls: false,
-                  onResultsUpdated: _onResultsReceived,
-                ),
+                // child: YoloSegmentation(
+                //   modelAssetPath: 'assets/models/v11_best_float32.tflite',
+                //   task: YOLOTask.segment,
+                //   showControls: false,
+                //   onResultsUpdated: _onResultsReceived,
+                // ),
+                child: const MapScreen(),
               ),
               Container(
                 height: 80,
@@ -455,8 +456,8 @@ class _HomePageState extends State<HomePage> {
             top: 16,
             right: 16,
             child: Container(
-              width: 110,
-              height: 150,
+              width: 100,
+              height: 160,
               decoration: BoxDecoration(
                 color: Colors.white,
                 borderRadius: BorderRadius.circular(12),
@@ -468,7 +469,13 @@ class _HomePageState extends State<HomePage> {
                   ),
                 ],
               ),
-              child: const MapScreen(),
+              // child: const MapScreen(),
+              child: YoloSegmentation(
+                modelAssetPath: 'assets/models/v11_best_float32.tflite',
+                task: YOLOTask.segment,
+                showControls: false,
+                onResultsUpdated: _onResultsReceived,
+              ),
             ),
           ),
 

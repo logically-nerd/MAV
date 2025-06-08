@@ -11,7 +11,7 @@ class ZoneDefinition {
     List<TrapezoidZone> zones = [];
 
     // Updated zone percentages
-    double immediateZoneHeightRatio = 0.40; // Bottom 30% = immediate
+    double immediateZoneHeightRatio = 0.45; // Bottom 30% = immediate
     double nextZoneHeightRatio = 0.30; // Next 20% = next step
 
     double immediateTopY = MASK_HEIGHT * (1.0 - immediateZoneHeightRatio);
@@ -19,10 +19,10 @@ class ZoneDefinition {
         MASK_HEIGHT * (1.0 - immediateZoneHeightRatio - nextZoneHeightRatio);
 
     // CORRECTED: More aggressive perspective narrowing
-    double centerBottomWidth = MASK_WIDTH * 0.50; // Wider at bottom
+    double centerBottomWidth = MASK_WIDTH * 0.55; // Wider at bottom
     double centerImmediateTopWidth =
         MASK_WIDTH * 0.30; // Medium at immediate top
-    double centerNextTopWidth = MASK_WIDTH * 0.20; // Much narrower at next top
+    double centerNextTopWidth = MASK_WIDTH * 0.30; // Much narrower at next top
 
     // Calculate center positions
     double centerBottomStartX = (MASK_WIDTH - centerBottomWidth) / 2;

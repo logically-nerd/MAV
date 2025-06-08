@@ -26,10 +26,10 @@ class TtsService {
   TtsService._internal();
 
   final FlutterTts _flutterTts = FlutterTts();
-  // Using a list instead of PriorityQueue for more control
   final List<_TtsRequest> _queue = [];
   bool _isSpeaking = false;
   Function? _currentRequestCompletion;
+  bool _blockLowPriority = false;
 
   // Initialize the service, setting up the crucial completion handler.
   Future<void> init() async {
@@ -76,100 +76,90 @@ class TtsService {
     });
   }
 
-  bool _blockLowPriority = false;
-
-  void blockLowPriority() {
-    _blockLowPriority = true;
-    // Only stop ongoing speech, don't clear high-priority queue items
-    if (_isSpeaking) {
-      _flutterTts.stop();
-    }
-  }
-
-  void unblockLowPriority() {
-    _blockLowPriority = false;
-  }
-
-  // Add a speech request to the queue.
+  /// Speak text with priority and completion callback
   void speak(String text, TtsPriority priority, {Function? onComplete}) {
-    if (_blockLowPriority &&
-        (priority == TtsPriority.map || priority == TtsPriority.model || priority == TtsPriority.orientation)) {
-      print("[TTS Service] Low priority request blocked during STT.");
-      return;
-    }
-    print(
-        "[TTS Service] Adding to queue: '$text' with priority ${priority.name}");
-
-    // If onComplete is not provided, use a no-op function
-    final Function actualOnComplete = onComplete ?? () {};
-
-    // For SOS, immediately stop current speech and prioritize it.
-    if (priority == TtsPriority.sos) {
-      _queue.clear(); // Clear all lower priority requests
-      _flutterTts.stop(); // Stop what's currently speaking
-      _isSpeaking = false; // Reset speaking flag
-
-      // Reset the current completion callback to prevent it from firing
-      // when we cancel the current speech
-      if (_currentRequestCompletion != null) {
-        // Execute the callback of the interrupted speech to prevent hanging UI
-        _currentRequestCompletion!();
-        _currentRequestCompletion = null;
-      }
-
-      // Directly add and speak the SOS request
-      final request = _TtsRequest(
-          text: text, priority: priority, onComplete: actualOnComplete);
-      _queue.add(request);
-
-      // Speak immediately without delay
-      _speakNext();
-      return;
-    }
-
-    // For other priorities, remove existing requests of the same or lower priority
-    _queue.removeWhere((req) => req.priority.index >= priority.index);
+    print("[TTS Service] Adding to queue: $text (Priority: $priority)");
 
     final request = _TtsRequest(
-        text: text, priority: priority, onComplete: actualOnComplete);
-    _queue.add(request);
+      text: text,
+      priority: priority,
+      onComplete: onComplete ?? () {},
+    );
 
-    // Sort the queue by priority (lowest index first)
-    _queue.sort((a, b) => a.priority.index.compareTo(b.priority.index));
+    // Check if we should block low priority requests
+    if (_blockLowPriority && _shouldBlock(priority)) {
+      print("[TTS Service] Blocking low priority request: $text");
+      onComplete?.call(); // Call completion immediately for blocked requests
+      return;
+    }
 
+    _addToQueue(request);
     if (!_isSpeaking) {
       _speakNext();
     }
   }
 
-  void _speakNext() {
-    if (_queue.isNotEmpty && !_isSpeaking) {
-      _isSpeaking = true;
-      final request = _queue.removeAt(0);
-      _currentRequestCompletion = request.onComplete;
-      print(
-          "[TTS Service] Speaking: '${request.text}' with priority ${request.priority.name}");
-      _flutterTts.speak(request.text);
+  bool _shouldBlock(TtsPriority priority) {
+    // Block everything except SOS and conversation during STT
+    return priority != TtsPriority.sos && priority != TtsPriority.conversation;
+  }
+
+  void _addToQueue(_TtsRequest request) {
+    // Insert based on priority (lower index = higher priority)
+    int insertIndex = _queue.length;
+    for (int i = 0; i < _queue.length; i++) {
+      if (request.priority.index < _queue[i].priority.index) {
+        insertIndex = i;
+        break;
+      }
+    }
+    _queue.insert(insertIndex, request);
+    print("[TTS Service] Queue size: ${_queue.length}");
+  }
+
+  Future<void> _speakNext() async {
+    if (_isSpeaking || _queue.isEmpty) return;
+
+    final request = _queue.removeAt(0);
+    _currentRequestCompletion = request.onComplete;
+    _isSpeaking = true;
+
+    print("[TTS Service] Speaking: ${request.text}");
+
+    try {
+      await _flutterTts.speak(request.text);
+    } catch (e) {
+      print('[TTS Service] Error speaking: $e');
+      _isSpeaking = false;
+      if (_currentRequestCompletion != null) {
+        _currentRequestCompletion!();
+        _currentRequestCompletion = null;
+      }
+      _speakNext();
     }
   }
 
-  // Stop all speech and clear the queue.
-  void stopAll() {
+  /// Block low priority TTS during STT
+  void blockLowPriority() {
+    print("[TTS Service] Blocking low priority requests");
+    _blockLowPriority = true;
+  }
+
+  /// Unblock low priority TTS after STT
+  void unblockLowPriority() {
+    print("[TTS Service] Unblocking low priority requests");
+    _blockLowPriority = false;
+  }
+
+  /// Stop current speech and clear queue
+  void stop() {
+    print("[TTS Service] Stopping all speech");
     _flutterTts.stop();
     _queue.clear();
     _isSpeaking = false;
     _currentRequestCompletion = null;
-    print("[TTS Service] All speech stopped and queue cleared.");
   }
 
-  // Dispose of the TTS engine when no longer needed
-  void dispose() {
-    _flutterTts.stop();
-    // Instead of setting null, use empty functions
-    _flutterTts.setCompletionHandler(() {});
-    _flutterTts.setErrorHandler((msg) {});
-    _flutterTts.setStartHandler(() {});
-    _flutterTts.setCancelHandler(() {});
-    print("[TTS Service] Disposed.");
-  }
+  /// Check if currently speaking
+  bool get isSpeaking => _isSpeaking;
 }

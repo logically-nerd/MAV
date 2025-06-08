@@ -165,16 +165,24 @@ class _MapScreenState extends State<MapScreen> {
 
   Future<void> _loadRoute(LatLng origin, LatLng destination) async {
     try {
+      debugPrint('MAP_SCREEN: Loading route from $origin to $destination');
+
       final points = await MapService.getPolylinePoints(
         origin: origin,
         destination: destination,
       );
-      final polyline = MapService.generatePolylineFromPoints(points);
 
-      if (mounted) {
-        setState(() {
-          polylines[polyline.polylineId] = polyline;
-        });
+      if (points.isNotEmpty) {
+        final polyline = MapService.generatePolylineFromPoints(points);
+
+        if (mounted) {
+          setState(() {
+            polylines[polyline.polylineId] = polyline;
+          });
+          debugPrint('MAP_SCREEN: Polyline added with ${points.length} points');
+        }
+      } else {
+        debugPrint('MAP_SCREEN: No polyline points received');
       }
     } catch (e) {
       debugPrint('Error loading route: $e');
@@ -237,16 +245,20 @@ class _MapScreenState extends State<MapScreen> {
           _destinationPosition = location; // Store the destination
           polylines.clear();
           _isSearching = false;
-
           // Update markers - add destination marker and keep current location marker
           _updateMarkers();
         });
 
-        // Load route to the new location
+        // Load route to the new location and WAIT for it to complete
         await _loadRoute(_currentPosition!, location);
 
-        // Move camera to show the route
-        _fitMapToShowRoute(_currentPosition!, location);
+        // Add a small delay to ensure polyline is rendered
+        await Future.delayed(const Duration(milliseconds: 500));
+
+        // Now move camera to show the route
+        await _fitMapToShowRoute(_currentPosition!, location);
+
+        debugPrint('MAP_SCREEN: Route loaded and camera fitted');
       } else {
         if (mounted) {
           setState(() {
@@ -282,33 +294,53 @@ class _MapScreenState extends State<MapScreen> {
 
   Future<void> _fitMapToShowRoute(LatLng origin, LatLng destination) async {
     try {
+      debugPrint('MAP_SCREEN: Fitting map to show route');
+
       final controller = await _mapController.future;
 
-      // Include origin and destination in the bounds
+      // Calculate bounds with some padding
+      double minLat = min(origin.latitude, destination.latitude);
+      double maxLat = max(origin.latitude, destination.latitude);
+      double minLng = min(origin.longitude, destination.longitude);
+      double maxLng = max(origin.longitude, destination.longitude);
+
+      // Add padding to bounds (0.001 degrees ≈ 100 meters)
+      double latPadding = max(0.002, (maxLat - minLat) * 0.2);
+      double lngPadding = max(0.002, (maxLng - minLng) * 0.2);
+
       final bounds = LatLngBounds(
-        southwest: LatLng(
-          origin.latitude < destination.latitude
-              ? origin.latitude
-              : destination.latitude,
-          origin.longitude < destination.longitude
-              ? origin.longitude
-              : destination.longitude,
-        ),
-        northeast: LatLng(
-          origin.latitude > destination.latitude
-              ? origin.latitude
-              : destination.latitude,
-          origin.longitude > destination.longitude
-              ? origin.longitude
-              : destination.longitude,
-        ),
+        southwest: LatLng(minLat - latPadding, minLng - lngPadding),
+        northeast: LatLng(maxLat + latPadding, maxLng + lngPadding),
       );
 
-      // Add some padding
-      const padding = 100.0;
-      controller.animateCamera(CameraUpdate.newLatLngBounds(bounds, padding));
+      debugPrint(
+          'MAP_SCREEN: Bounds calculated: SW=${bounds.southwest}, NE=${bounds.northeast}');
+
+      // Animate to bounds with padding
+      await controller.animateCamera(
+        CameraUpdate.newLatLngBounds(bounds, 100.0), // 100px padding
+      );
+
+      debugPrint('MAP_SCREEN: Camera animation completed');
     } catch (e) {
       debugPrint('Error fitting map to route: $e');
+      // Fallback: just center between the two points
+      try {
+        final controller = await _mapController.future;
+        final centerLat = (origin.latitude + destination.latitude) / 2;
+        final centerLng = (origin.longitude + destination.longitude) / 2;
+
+        await controller.animateCamera(
+          CameraUpdate.newCameraPosition(
+            CameraPosition(
+              target: LatLng(centerLat, centerLng),
+              zoom: 14.0,
+            ),
+          ),
+        );
+      } catch (fallbackError) {
+        debugPrint('Fallback camera positioning also failed: $fallbackError');
+      }
     }
   }
 
@@ -1053,42 +1085,42 @@ class _MapScreenState extends State<MapScreen> {
           // ),
 
           // Suggestions list (keep this for search functionality)
-          if (_suggestions.isNotEmpty)
-            Positioned(
-              top: 110,
-              left: 20,
-              right: 20,
-              child: Container(
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(8),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.grey.withOpacity(0.5),
-                      spreadRadius: 2,
-                      blurRadius: 7,
-                      offset: const Offset(0, 3),
-                    )
-                  ],
-                ),
-                constraints: const BoxConstraints(maxHeight: 200),
-                child: ListView.builder(
-                  shrinkWrap: true,
-                  itemCount: _suggestions.length,
-                  itemBuilder: (context, index) {
-                    return ListTile(
-                      leading: const Icon(Icons.location_on),
-                      title: Text(
-                        _suggestions[index].description,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      onTap: () => _handleSuggestionTap(_suggestions[index]),
-                    );
-                  },
-                ),
-              ),
-            ),
+          // if (_suggestions.isNotEmpty)
+          //   Positioned(
+          //     top: 110,
+          //     left: 20,
+          //     right: 20,
+          //     child: Container(
+          //       decoration: BoxDecoration(
+          //         color: Colors.white,
+          //         borderRadius: BorderRadius.circular(8),
+          //         boxShadow: [
+          //           BoxShadow(
+          //             color: Colors.grey.withOpacity(0.5),
+          //             spreadRadius: 2,
+          //             blurRadius: 7,
+          //             offset: const Offset(0, 3),
+          //           )
+          //         ],
+          //       ),
+          //       constraints: const BoxConstraints(maxHeight: 200),
+          //       child: ListView.builder(
+          //         shrinkWrap: true,
+          //         itemCount: _suggestions.length,
+          //         itemBuilder: (context, index) {
+          //           return ListTile(
+          //             leading: const Icon(Icons.location_on),
+          //             title: Text(
+          //               _suggestions[index].description,
+          //               maxLines: 2,
+          //               overflow: TextOverflow.ellipsis,
+          //             ),
+          //             onTap: () => _handleSuggestionTap(_suggestions[index]),
+          //           );
+          //         },
+          //       ),
+          //     ),
+          //   ),
 
           // Simplified navigation info panel
           if (_destinationPosition != null)
@@ -1097,14 +1129,14 @@ class _MapScreenState extends State<MapScreen> {
               left: 20,
               right: 20,
               child: GestureDetector(
-                onTap: () {
-                  debugPrint('MAP_NAV: Navigation panel tapped');
-                  if (_isNavigating) {
-                    _cancelRoute();
-                  } else {
-                    _startNavigation();
-                  }
-                },
+                // onTap: () {
+                //   debugPrint('MAP_NAV: Navigation panel tapped');
+                //   if (_isNavigating) {
+                //     _cancelRoute();
+                //   } else {
+                //     _startNavigation();
+                //   }
+                // },
                 child: Container(
                   decoration: BoxDecoration(
                     color: _isNavigating ? Colors.blue.shade800 : Colors.white,
@@ -1170,16 +1202,16 @@ class _MapScreenState extends State<MapScreen> {
                             ],
                           ),
 
-                          // Action text
-                          Text(
-                            _isNavigating ? 'Tap to cancel' : 'Tap to start',
-                            style: TextStyle(
-                              color: _isNavigating
-                                  ? Colors.white70
-                                  : Colors.grey.shade600,
-                              fontSize: 12,
-                            ),
-                          ),
+                          // // Action text
+                          // Text(
+                          //   _isNavigating ? 'Tap to cancel' : 'Tap to start',
+                          //   style: TextStyle(
+                          //     color: _isNavigating
+                          //         ? Colors.white70
+                          //         : Colors.grey.shade600,
+                          //     fontSize: 12,
+                          //   ),
+                          // ),
                         ],
                       ),
 
