@@ -7,12 +7,8 @@ import 'package:MAV/services/safe_path_service/yolo_segmentation.dart';
 import 'package:MAV/services/tts_service.dart';
 import 'package:flutter/material.dart';
 import 'package:keep_screen_on/keep_screen_on.dart';
-// import 'package:ultralytics_yolo/yolo_view.dart';
-// import 'screens/sensor_screen/device_orientation.dart';
 import 'package:MAV/screens/intent_listener_widget.dart';
-// import 'screens/sensor_screen/device_orientation.dart';
 import 'package:camera/camera.dart';
-// import 'screens/yoloe_screen/websocket_client_yoloe.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:permission_handler/permission_handler.dart';
@@ -265,8 +261,13 @@ class _HomePageState extends State<HomePage> {
     }
     // --- Call the Navigation Pipeline ---
     try {
+      final stopwatch = Stopwatch()..start();
       NavigationPipelineOutput pipelineOutput =
           await _pipelineController.processFrame(results);
+      stopwatch.stop();
+      print("#" * 100);
+      print("Frame processed in ${stopwatch.elapsedMilliseconds} ms");
+      print("#" * 100);
 
       setState(() {
         _latestPipelineOutput = pipelineOutput;
@@ -313,90 +314,6 @@ class _HomePageState extends State<HomePage> {
         ),
         backgroundColor: Colors.blueAccent,
       ),
-      // body: Column(
-      //   children: [
-      //     Expanded(
-      //       flex: 4, // Increased space for camera view
-      //       child: YoloSegmentation(
-      //         modelAssetPath: 'assets/models/v11_best_float32.tflite',
-      //         task: YOLOTask.segment,
-      //         showControls: false,
-      //         onResultsUpdated: _onResultsReceived,
-      //       ),
-      //     ),
-
-      //     // Clean status display instead of debug info
-      //     Container(
-      //       height: 80,
-      //       width: double.infinity,
-      //       color: Colors.black87,
-      //       child: Center(
-      //         child: Column(
-      //           mainAxisAlignment: MainAxisAlignment.center,
-      //           children: [
-      //             if (_latestPipelineOutput != null)
-      //               Text(
-      //                 _formatCommandForSpeech(_latestPipelineOutput!
-      //                         .navigationCommand.primaryAction)
-      //                     .toUpperCase(),
-      //                 style: TextStyle(
-      //                   color: Colors.white,
-      //                   fontSize: 24,
-      //                   fontWeight: FontWeight.bold,
-      //                 ),
-      //               )
-      //             else
-      //               Text(
-      //                 _isModelReady ? 'READY' : 'INITIALIZING...',
-      //                 style: TextStyle(
-      //                   color: Colors.white70,
-      //                   fontSize: 18,
-      //                 ),
-      //               ),
-      //             if (_latestPipelineOutput != null)
-      //               Text(
-      //                 'Confidence: ${(_latestPipelineOutput!.navigationCommand.confidence * 100).toStringAsFixed(1)}%',
-      //                 style: TextStyle(color: Colors.white70, fontSize: 14),
-      //               ),
-      //           ],
-      //         ),
-      //       ),
-      //     ),
-
-      //     /*
-      //     // COMMENTED OUT: Debug info - can be re-enabled later if needed
-      //     if (_latestPipelineOutput != null)
-      //       Expanded(
-      //         flex: 1,
-      //         child: Container(
-      //           padding: const EdgeInsets.all(8.0),
-      //           color: Colors.grey[200],
-      //           child: SingleChildScrollView(
-      //             child: Column(
-      //               crossAxisAlignment: CrossAxisAlignment.start,
-      //               children: [
-      //                 Text("Pipeline Debug Output:", style: Theme.of(context).textTheme.titleMedium),
-      //                 const SizedBox(height: 8),
-      //                 Text("Command: ${_latestPipelineOutput!.navigationCommand.primaryAction}"),
-      //                 Text("Target: ${_latestPipelineOutput!.navigationCommand.targetSurface}"),
-      //                 Text("Confidence: ${(_latestPipelineOutput!.navigationCommand.confidence * 100).toStringAsFixed(1)}%"),
-      //                 Text("Reason: ${_latestPipelineOutput!.navigationCommand.reason}"),
-      //                 Text("Voice: ${_latestPipelineOutput!.accessibility.voiceCommand}"),
-      //                 const SizedBox(height: 8),
-      //                 Text("Best Zone: ${_latestPipelineOutput!.zoneAnalysis.currentBestZoneId}"),
-      //                 Text("Scores:"),
-      //                 ..._latestPipelineOutput!.zoneAnalysis.scores.entries
-      //                     .map((e) => Text("  ${e.key}: ${e.value.toStringAsFixed(2)}"))
-      //                     .toList(),
-      //               ],
-      //             ),
-      //           ),
-      //         ),
-      //       ),
-      //     */
-      //   ],
-      // ),
-
       body: Stack(
         children: [
           // Main Content: Camera view and status bar

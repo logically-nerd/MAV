@@ -127,7 +127,7 @@ class TtsService {
     print("[TTS Service] Speaking: ${request.text}");
 
     try {
-      await _flutterTts.speak(request.text);
+      _flutterTts.speak(request.text);
     } catch (e) {
       print('[TTS Service] Error speaking: $e');
       _isSpeaking = false;
