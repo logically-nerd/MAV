@@ -39,7 +39,7 @@ class ConfirmationHandler {
         "You asked for surrounding awareness. Is that correct?");
   }
 
-  // Centralized method to speak and then listen for confirmation
+  // Improved method with proper TTS/STT sequencing
   Future<bool?> _askAndListen(String question) async {
     if (!_isInitialized) {
       print("[Confirm] STT not initialized, attempting to initialize...");
@@ -54,18 +54,27 @@ class ConfirmationHandler {
     int attempts = 0;
     const maxAttempts = 2;
 
-    void ask() {
+    // Overall timeout for the entire confirmation process
+    Timer? overallTimer = Timer(const Duration(seconds: 45), () {
+      if (!completer.isCompleted) {
+        print("[Confirm] Overall timeout reached");
+        completer.complete(null);
+      }
+    });
+
+    Future<void> ask() async {
       if (attempts >= maxAttempts) {
         print("[Confirm] Max attempts reached, giving up");
-        _ttsService.speak(
+
+        // Wait for TTS to complete before finishing
+        await _speakAndWait(
           "Still didn't catch that. Please double tap to speak again.",
           TtsPriority.conversation,
-          onComplete: () {
-            if (!completer.isCompleted) {
-              completer.complete(null);
-            }
-          },
         );
+
+        if (!completer.isCompleted) {
+          completer.complete(null);
+        }
         return;
       }
 
@@ -75,44 +84,66 @@ class ConfirmationHandler {
 
       print("[Confirm] Attempt $attempts: $message");
 
-      // Speak, and in the onComplete callback, start listening
-      _ttsService.speak(
-        message,
-        TtsPriority.conversation,
-        onComplete: () async {
-          print("[Confirm] TTS completed, starting STT...");
-          HapticFeedback.heavyImpact();
+      try {
+        // 1. Speak and wait for completion
+        await _speakAndWait(message, TtsPriority.conversation);
 
-          // Small delay to ensure TTS is fully completed
-          await Future.delayed(const Duration(milliseconds: 300));
+        // 2. Add haptic feedback
+        HapticFeedback.heavyImpact();
 
-          final result = await _listenForAffirmation();
+        // 3. Ensure TTS is completely finished with additional buffer
+        await Future.delayed(const Duration(milliseconds: 500));
 
-          if (!completer.isCompleted) {
-            if (result != null) {
-              print("[Confirm] Got result: $result");
-              completer.complete(result);
-            } else {
-              print("[Confirm] No result, trying again...");
-              // If listening failed, ask again
-              ask();
-            }
+        // 4. Start listening (timeout starts here)
+        final result = await _listenForAffirmation();
+
+        if (!completer.isCompleted) {
+          if (result != null) {
+            print("[Confirm] Got result: $result");
+            completer.complete(result);
+          } else {
+            print("[Confirm] No result, trying again...");
+            // If listening failed, ask again
+            await ask();
           }
-        },
-      );
+        }
+      } catch (e) {
+        print("[Confirm] Error in ask attempt: $e");
+        if (!completer.isCompleted) {
+          completer.complete(null);
+        }
+      }
     }
 
-    ask(); // Start the first attempt
+    await ask(); // Start the first attempt
 
-    // Overall timeout for the entire confirmation process
-    Timer(const Duration(seconds: 30), () {
-      if (!completer.isCompleted) {
-        print("[Confirm] Overall timeout reached");
-        completer.complete(null);
-      }
-    });
+    final result = await completer.future;
+    overallTimer?.cancel();
+    return result;
+  }
 
-    return completer.future;
+  // Helper method to speak and wait for completion
+  Future<void> _speakAndWait(String text, TtsPriority priority) async {
+    Completer<void> ttsCompleter = Completer();
+
+    _ttsService.speak(
+      text,
+      priority,
+      onComplete: () {
+        print("[Confirm] TTS completed for: $text");
+        if (!ttsCompleter.isCompleted) {
+          ttsCompleter.complete();
+        }
+      },
+    );
+
+    // Wait for TTS to complete with timeout
+    await ttsCompleter.future.timeout(
+      const Duration(seconds: 10),
+      onTimeout: () {
+        print("[Confirm] TTS timeout for: $text");
+      },
+    );
   }
 
   Future<bool?> _listenForAffirmation() async {
@@ -123,6 +154,7 @@ class ConfirmationHandler {
 
     Completer<bool?> completer = Completer();
     bool isListening = false;
+    Timer? listeningTimer;
 
     try {
       print("[Confirm] Starting to listen...");
@@ -165,24 +197,25 @@ class ConfirmationHandler {
         completer.complete(null);
       } else {
         print("[Confirm] Successfully started listening");
+
+        // Start timeout ONLY after listening actually begins
+        listeningTimer = Timer(const Duration(seconds: 10), () {
+          if (!completer.isCompleted) {
+            print("[Confirm] Listening timeout reached");
+            _speech.stop();
+            completer.complete(null);
+          }
+        });
       }
     } catch (e) {
       print("[Confirm] Exception during listening: $e");
       completer.complete(null);
     }
 
-    // Timeout for the listening part
-    Timer(const Duration(seconds: 10), () {
-      if (!completer.isCompleted) {
-        print("[Confirm] Listening timeout reached");
-        _speech.stop();
-        completer.complete(null);
-      }
-    });
-
     final result = await completer.future;
 
-    // Ensure we stop listening
+    // Cleanup
+    listeningTimer?.cancel();
     if (isListening) {
       await _speech.stop();
     }
