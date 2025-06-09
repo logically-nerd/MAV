@@ -50,7 +50,6 @@ class AwarenessHandler {
 
   AwarenessHandler._internal() {
     // Block all TTS requests except SOS and awareness from initialization
-    _blockNonEssentialTts();
   }
 
   bool get isAwarenessActive => _isAwarenessActive;
@@ -272,7 +271,8 @@ class AwarenessHandler {
     try {
       // Stop and block any ongoing TTS
       _ttsService.stop();
-      _ttsService.blockLowPriority();
+      // _ttsService.blockLowPriority(); // Replace this with the specific blocking for awareness mode
+      _blockNonEssentialTts(); // ADD THIS LINE: Block TTS for awareness mode
 
       print("[Awareness] Speaking: Starting awareness mode...");
       await _ttsService.speakAndWait(

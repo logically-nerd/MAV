@@ -183,31 +183,32 @@ class NavigationHandler {
   Future<PlaceSuggestion?> _presentPlaceOptions(
       List<PlaceSuggestion> suggestions) async {
     try {
-      // Build the options announcement
-      String optionsText = "I found ${suggestions.length} options: ";
+      // Build the options announcement - WITHOUT the "Please say the number" part
+      String optionsListText = "I found ${suggestions.length} options: ";
 
       for (int i = 0; i < suggestions.length; i++) {
-        optionsText += "${i + 1}. ${suggestions[i].name}";
+        optionsListText += "${i + 1}. ${suggestions[i].name}";
         if (suggestions[i].distance.isNotEmpty) {
-          optionsText += " at ${suggestions[i].distance}";
+          optionsListText += " at ${suggestions[i].distance}";
         }
 
         if (i < suggestions.length - 1) {
-          optionsText += ", ";
+          optionsListText += ", ";
         } else {
-          optionsText +=
-              ". Please say the number of your choice, from 1 to ${suggestions.length}.";
+          optionsListText += "."; // End the list here
         }
       }
-      // Announce the options
-      await _ttsService.speakAndWait(optionsText, TtsPriority.confirmation);
+      // Announce the options list
+      await _ttsService.speakAndWait(optionsListText,
+          TtsPriority.conversation); // Use conversation priority for listing
 
-      // Add a pause before starting STT to ensure TTS is completely finished
-      print("[NavigationHandler] ⏱️ Pausing after TTS before starting STT...");
-      await Future.delayed(Duration(milliseconds: 1500));
-      print("[NavigationHandler] ⏱️ Pause complete, starting STT...");
+      // Add a pause before asking for choice to ensure TTS is completely finished
+      print("[NavigationHandler] ⏱️ Pausing after speaking options list...");
+      await Future.delayed(Duration(milliseconds: 500)); // Adjusted pause
+      print(
+          "[NavigationHandler] ⏱️ Pause complete, proceeding to listen for choice...");
 
-      // Listen for user's choice
+      // Listen for user's choice (this will now handle its own prompt)
       final selectedIndex = await _listenForNumberChoice(suggestions.length);
 
       if (selectedIndex != null &&
@@ -215,15 +216,16 @@ class NavigationHandler {
           selectedIndex < suggestions.length) {
         final selectedPlace = suggestions[selectedIndex];
 
-        await _ttsService.speakAndWait(
-          "You selected ${selectedPlace.name}. Proceeding with navigation.",
-          TtsPriority.conversation,
-        );
+        // Confirmation of selection can be part of starting navigation
+        // await _ttsService.speakAndWait(
+        //   "You selected ${selectedPlace.name}. Proceeding with navigation.",
+        //   TtsPriority.conversation,
+        // );
 
         return selectedPlace;
       } else {
         await _ttsService.speakAndWait(
-          "Invalid selection or no choice made. Using the nearest option: ${suggestions.first.name}.",
+          "No valid choice made. Using the nearest option: ${suggestions.first.name}.",
           TtsPriority.conversation,
         );
         return suggestions.first; // Default to nearest
@@ -241,95 +243,32 @@ class NavigationHandler {
   Future<int?> _listenForNumberChoice(int maxOptions) async {
     try {
       print(
-          "[NavigationHandler] 🎤 Starting number choice listening (max: $maxOptions)");
+          "[NavigationHandler] 🎤 Requesting number choice (max: $maxOptions)");
 
-      // Use ConfirmationHandler's STT
-      if (!_confirmationHandler.isInitialized ||
-          !_confirmationHandler.speech.isAvailable) {
-        print("[NavigationHandler] ❌ STT not available");
+      String promptForNumberChoice =
+          "Please say the number of your choice, from 1 to $maxOptions.";
+
+      // Use ConfirmationHandler to speak the prompt and listen for raw speech
+      final spokenText = await _confirmationHandler.listenForRawSpeech(
+          promptForNumberChoice,
+          priority: TtsPriority.confirmation // This prompt is a direct question
+          );
+
+      if (spokenText != null && spokenText.isNotEmpty) {
+        print(
+            "[NavigationHandler] 🎯 Received raw speech for number choice: '$spokenText'");
+        int? choice = _parseSpokenNumber(spokenText, maxOptions);
+        print("[NavigationHandler] 🔢 Parsed choice: $choice");
+        return choice;
+      } else {
+        print(
+            "[NavigationHandler] 🛑 No speech received or empty for number choice.");
+        // TTS feedback for no choice is handled by _presentPlaceOptions or the caller
         return null;
-      }
-
-      final completer = Completer<int?>();
-      bool resultHandled = false;
-      Timer? timeoutTimer;
-
-      // Set status listener BEFORE starting STT
-      _confirmationHandler.speech.statusListener = (status) async {
-        print("[NavigationHandler] 📡 STT Status: $status");
-
-        if (status == "listening") {
-          print("[NavigationHandler] ✅ STT started listening successfully");
-        } else if (status == "notListening" &&
-            !resultHandled &&
-            !completer.isCompleted) {
-          await Future.delayed(Duration(milliseconds: 500));
-          if (!resultHandled && !completer.isCompleted) {
-            resultHandled = true;
-            print(
-                "[NavigationHandler] 🛑 STT stopped listening without result");
-            completer.complete(null);
-          }
-        }
-      };
-
-      // Start timeout timer AFTER setting status listener
-      timeoutTimer = Timer(Duration(seconds: 15), () {
-        if (!completer.isCompleted) {
-          resultHandled = true;
-          print("[NavigationHandler] ⏰ Timeout waiting for number choice");
-          completer.complete(null);
-        }
-      });
-
-      try {
-        // IMPORTANT: Don't try to capture return value - this causes the null/bool type error
-        _confirmationHandler.speech.listen(
-          onResult: (result) {
-            print(
-                "[NavigationHandler] 📝 STT Result: '${result.recognizedWords}' (final: ${result.finalResult})");
-
-            if (result.finalResult && !resultHandled) {
-              resultHandled = true;
-              final spokenText = result.recognizedWords.toLowerCase().trim();
-              print(
-                  "[NavigationHandler] 🎯 Processing final result: '$spokenText'");
-
-              int? choice = _parseSpokenNumber(spokenText, maxOptions);
-              print("[NavigationHandler] 🔢 Parsed choice: $choice");
-
-              if (!completer.isCompleted) {
-                completer.complete(choice);
-              }
-            }
-          },
-          listenFor: Duration(seconds: 10),
-          pauseFor: Duration(seconds: 3),
-          partialResults: true,
-          cancelOnError: false, // Change to false to prevent early cancellation
-        );
-
-        return await completer.future;
-      } catch (e) {
-        print("[NavigationHandler] ❌ Exception during STT listen: $e");
-        if (!completer.isCompleted) {
-          completer.complete(null);
-        }
-        return null;
-      } finally {
-        timeoutTimer?.cancel();
-
-        try {
-          if (_confirmationHandler.speech.isListening) {
-            await _confirmationHandler.speech.stop();
-          }
-          _confirmationHandler.speech.statusListener = null;
-        } catch (e) {
-          print("[NavigationHandler] ⚠ Error in STT cleanup: $e");
-        }
       }
     } catch (e) {
       print("[NavigationHandler] ❌ Error in number choice listening: $e");
+      // TTS feedback for error is handled by _presentPlaceOptions or the caller
       return null;
     }
   }

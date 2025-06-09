@@ -6,7 +6,7 @@ import '../tts_service.dart';
 import 'confirmation_handler.dart';
 import '../navigation_handler.dart';
 import '../sos_service.dart';
- // Import the awareness handler
+// Import the awareness handler
 
 enum IntentType {
   navigate,
@@ -43,38 +43,20 @@ class ConversationService {
     bool available = await _speech.initialize();
     print("[Conversation] Speech available: $available");
 
-    await _ttsService.init();
+    // TTS init is likely already called by main or another service, but ensure it's ready.
+    // await _ttsService.init(); // Assuming TTS is initialized globally once.
     await _confirmationHandler.preload();
-    await _navigationHandler.preload();
-    await _sosService.preload();
+    // NavigationHandler and SOSService preload if they have specific needs.
+    // await _navigationHandler.preload();
+    // await _sosService.preload();
 
-    print("[Conversation] ✓ All services initialized");
+    print(
+        "[Conversation] ✓ ConversationService preloaded (dependent services should be preloaded elsewhere if needed)");
   }
 
-  Future<void> _feedbackStart() async {
-    HapticFeedback.heavyImpact();
-    // Block lower priority TTS before starting
-    _ttsService.stop();
-    // Small delay to ensure TTS cleanup
-    await Future.delayed(Duration(milliseconds: 200));
-
-    _ttsService.blockLowPriority();
-
-    // Wait for any current speech to complete before STT
-    // while (_ttsService.isSpeaking) {
-    //   print("[Conversation] Waiting for TTS to complete before STT...");
-    //   await Future.delayed(Duration(milliseconds: 100));
-    // }
-    // Use speakAndWait to ensure "Listening" completes before STT starts
-    await _ttsService.speakAndWait("Listening", TtsPriority.conversation);
-    print("[Conversation] ✓ 'Listening' speech completed");
-  }
-
-  Future<void> _feedbackStop() async {
-    HapticFeedback.heavyImpact();
-    _ttsService.unblockLowPriority();
-    print("[Conversation] ✓ Feedback ended, TTS unblocked");
-  }
+  // This specific feedback function is removed as its logic is integrated into listenAndClassify
+  // Future<void> _feedbackStart() async { ... }
+  // Future<void> _feedbackStop() async { ... }
 
   Future<IntentResult?> listenAndClassify() async {
     if (_isListening) {
@@ -83,9 +65,17 @@ class ConversationService {
     }
 
     _isListening = true;
+    // Establish TTS block for the duration of the conversation.
+    // Allow SOS, own conversation prompts, and confirmation prompts.
+    _ttsService.blockAllExcept(
+        [TtsPriority.sos, TtsPriority.conversation, TtsPriority.confirmation]);
+    print(
+        "[Conversation] TTS block active, allowing: SOS, Conversation, Confirmation");
 
     try {
-      bool available = await _speech.initialize();
+      bool available = await _speech.initialize(
+          onError: (error) => print("[STT] Error during init: $error"),
+          onStatus: (status) => print("[STT] Status during init: $status"));
       print("[Conversation] STT available: $available");
 
       if (!available) {
@@ -94,22 +84,29 @@ class ConversationService {
         return null;
       }
 
-      // Speak "Listening" and wait for completion
-      await _feedbackStart();
-      print("[Conversation] ✓ Feedback completed, starting STT...");
+      // Haptic feedback and stop any current TTS before speaking "Listening"
+      HapticFeedback.heavyImpact();
+      _ttsService.stop(); // Clear any ongoing TTS
+      await Future.delayed(const Duration(
+          milliseconds: 100)); // Short delay for TTS stop to take effect
+      await _ttsService.speakAndWait("Listening", TtsPriority.conversation);
+      print("[Conversation] ✓ 'Listening' speech completed, starting STT...");
 
       final completer = Completer<IntentResult?>();
       bool resultHandled = false;
 
       _speech.statusListener = (status) async {
         print("[STT] Status: $status");
-
         if (status == "notListening" &&
             !resultHandled &&
             !completer.isCompleted) {
-          await Future.delayed(Duration(milliseconds: 500));
+          // Delay to ensure onResult might still fire if speech was very short
+          await Future.delayed(const Duration(milliseconds: 300));
           if (!resultHandled && !completer.isCompleted) {
+            // Re-check after delay
             resultHandled = true;
+            print(
+                "[Conversation] STT stopped without final result, assuming no input.");
             await _ttsService.speakAndWait(
                 "Didn't catch anything.", TtsPriority.conversation);
             completer.complete(null);
@@ -117,14 +114,26 @@ class ConversationService {
         }
       };
 
+      _speech.errorListener = (errorNotification) {
+        print("[STT] Error: ${errorNotification.errorMsg}");
+        if (!resultHandled && !completer.isCompleted) {
+          resultHandled = true;
+          _ttsService.speakAndWait(
+              "Speech recognition error.", TtsPriority.conversation);
+          completer.complete(null);
+        }
+      };
+
       _speech.listen(
-        pauseFor: const Duration(seconds: 5),
-        listenFor: const Duration(seconds: 12),
+        pauseFor: const Duration(seconds: 4), // Slightly shorter pause
+        listenFor: const Duration(seconds: 10), // Max listen duration
         onResult: (result) async {
-          print("[STT] Got result: ${result.recognizedWords}");
+          print(
+              "[STT] Got result: ${result.recognizedWords}, final: ${result.finalResult}");
           if (result.finalResult && !resultHandled) {
             resultHandled = true;
-            await _feedbackStop();
+            HapticFeedback
+                .heavyImpact(); // Haptic feedback for recognized speech
 
             final transcript = result.recognizedWords.toLowerCase().trim();
             print("[Conversation] Final Transcript: $transcript");
@@ -135,16 +144,26 @@ class ConversationService {
               completer.complete(null);
               return;
             }
-
-            // Handle different intents
+            // Process the intent. TTS unblocking will happen in the finally block.
             await _handleIntent(transcript, completer);
           }
         },
       );
 
       return await completer.future;
+    } catch (e) {
+      print("[Conversation] Error in listenAndClassify: $e");
+      await _ttsService.speakAndWait(
+          "An error occurred. Please try again.", TtsPriority.conversation);
+      return null;
     } finally {
       _isListening = false;
+      if (_speech.isListening) {
+        _speech.stop();
+      }
+      _ttsService
+          .unblockLowPriority(); // Lift the TTS block when conversation flow ends
+      print("[Conversation] ✓ listenAndClassify finished, TTS unblocked");
     }
   }
 
@@ -155,7 +174,8 @@ class ConversationService {
       await _ttsService.speakAndWait(
           "Emergency detected. Calling emergency services.", TtsPriority.sos);
       await _sosService.triggerSOS();
-      completer.complete(null);
+      completer.complete(IntentResult(
+          intent: IntentType.sos, raw: transcript)); // Return SOS intent
       return;
     }
 
@@ -177,7 +197,7 @@ class ConversationService {
         } else {
           await _ttsService.speakAndWait(
               "Where would you like to go instead?", TtsPriority.conversation);
-          completer.complete(null);
+          completer.complete(null); // Or intent with null destination
         }
         break;
 
@@ -190,30 +210,37 @@ class ConversationService {
         } else {
           await _ttsService.speakAndWait(
               "Where would you like to navigate to?", TtsPriority.conversation);
-          completer.complete(null);
+          completer.complete(null); // Or intent with null destination
         }
         break;
 
       case IntentType.awareness:
+        // ConfirmationHandler will use TtsPriority.confirmation, which is allowed by our current block.
         final confirmed = await _confirmationHandler.confirmAwareness();
         if (confirmed == true) {
-          print("[Conversation] Awareness confirmed");
-          // await _ttsService.speakAndWait(
-          //     "Starting awareness mode", TtsPriority.conversation);
+          print("[Conversation] Awareness confirmed by user.");
+          // AwarenessHandler.startAwarenessMode will manage its own TTS and specific blocking.
+          // The block set by ConversationService will be overridden by AwarenessHandler's block,
+          // and then restored (unblocked) when AwarenessHandler stops.
           await AwarenessHandler.instance.startAwarenessMode();
-        } else {
-          print("[Conversation] Awareness canceled by user");
+        } else if (confirmed == false) {
+          print("[Conversation] Awareness canceled by user.");
           await _ttsService.speakAndWait(
               "Awareness check canceled.", TtsPriority.conversation);
+        } else {
+          // confirmed is null (no response / timeout in confirmation)
+          print("[Conversation] Awareness confirmation unclear or timed out.");
+          // ConfirmationHandler should have already provided feedback like "I didn't catch that."
         }
-        completer.complete(intent);
+        completer
+            .complete(intent); // Complete with the original awareness intent
         break;
 
-      default:
+      default: // IntentType.unknown
         await _ttsService.speakAndWait(
-            "Try saying 'navigate to park' or 'what's around me'.",
+            "I'm not sure how to help with that. Try saying 'navigate to park' or 'what's around me'.",
             TtsPriority.conversation);
-        completer.complete(null);
+        completer.complete(intent); // Return unknown intent
     }
   }
 
@@ -349,22 +376,55 @@ class ConversationService {
   }
 
   String? _extractDestination(String sentence) {
-    final regex = RegExp(
-      r"(navigate to|go to|head to|take me to|let's go to|i want to go to|move to|get to)\s+(.*)",
-    );
-    final match = regex.firstMatch(sentence);
-    print("[Conversation] Extracted destination: ${match?.group(2)?.trim()}");
-    return match?.group(2)?.trim();
+    final patterns = [
+      RegExp(
+          r"(?:navigate to|go to|head to|take me to|let's go to|i want to go to|move to|get to|directions to|show me the way to|guide me to|i need to get to|walk to|walking directions to)\s+(.+)",
+          caseSensitive: false),
+      RegExp(r"find\s+(?:me\s+)?(?:a\s+route\s+to\s+|the\s+way\s+to\s+)?(.+)",
+          caseSensitive: false),
+      RegExp(r"how do i get to\s+(.+)", caseSensitive: false),
+    ];
+
+    for (final regex in patterns) {
+      final match = regex.firstMatch(sentence);
+      if (match != null && match.group(1) != null) {
+        final destination = match.group(1)!.trim();
+        if (destination.isNotEmpty) {
+          print("[Conversation] Extracted destination: $destination");
+          return destination;
+        }
+      }
+    }
+    print("[Conversation] No destination extracted from: $sentence");
+    return null;
   }
 
   String? _extractChangeDestination(String sentence) {
-    final regex = RegExp(
-      r"(change destination to|change my destination to|redirect to|switch destination to|change route to|take me to|i changed my mind take me to|actually take me to|instead take me to|on second thought take me to|new destination)\s+(.*)",
-    );
-    final match = regex.firstMatch(sentence);
-    if (match != null) {
-      return match.group(2)?.trim();
+    final patterns = [
+      RegExp(
+          r"(?:change destination to|change my destination to|redirect to|switch destination to|change route to|i changed my mind take me to|actually take me to|instead take me to|on second thought take me to|new destination is|new destination)\s+(.+)",
+          caseSensitive: false),
+      // Simpler patterns if the above are too specific
+      RegExp(r"take me to\s+(.+)",
+          caseSensitive: false), // Can be part of change
+      RegExp(r"go to\s+(.+)", caseSensitive: false), // Can be part of change
+    ];
+
+    for (final regex in patterns) {
+      final match = regex.firstMatch(sentence);
+      if (match != null && match.group(1) != null) {
+        final destination = match.group(1)!.trim();
+        if (destination.isNotEmpty) {
+          print("[Conversation] Extracted change destination: $destination");
+          return destination;
+        }
+      }
     }
-    return _extractDestination(sentence);
+    // Fallback to general destination extraction if specific change phrases are not matched but navigation keywords are present
+    if (_matchesNavigate(sentence)) {
+      return _extractDestination(sentence);
+    }
+    print("[Conversation] No destination extracted for change from: $sentence");
+    return null;
   }
 }
