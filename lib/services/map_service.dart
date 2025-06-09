@@ -194,161 +194,224 @@ class MapService {
     }
   }
 
-  /// Fast place suggestions with 10km radius limit
+  /// Gets location-prioritized place suggestions
   static Future<List<PlaceSuggestion>> getPlaceSuggestions(
       String input, LatLng? location) async {
-    if (input.length < 2 || _googleApiKey.isEmpty) {
-      debugPrint('MapService: Input too short or API key missing');
-      return [];
-    }
+    if (input.length < 2 || _googleApiKey.isEmpty) return [];
 
     try {
-      debugPrint('MapService: Getting suggestions for "$input" near $location');
-
       List<PlaceSuggestion> allSuggestions = [];
 
-      // Strategy 1: Quick Autocomplete API
-      final autocompleteSuggestions =
-          await _getAutocompleteSuggestions(input, location);
-      allSuggestions.addAll(autocompleteSuggestions);
-      debugPrint(
-          'MapService: Got ${autocompleteSuggestions.length} autocomplete suggestions');
+      if (location != null) {
+        // Strategy 1: Try Nearby Search first for better location accuracy
+        final nearbySuggestions = await _getNearbyPlaces(input, location);
+        allSuggestions.addAll(nearbySuggestions);
 
-      // Strategy 2: Text Search API for backup
-      if (allSuggestions.length < 3) {
+        // Strategy 2: Add Text Search with location bias
         final textSuggestions = await _getTextSearchPlaces(input, location);
 
+        // Merge and deduplicate
         for (final textSuggestion in textSuggestions) {
-          bool exists = allSuggestions.any((existing) =>
-              existing.placeId == textSuggestion.placeId ||
-              existing.name.toLowerCase() == textSuggestion.name.toLowerCase());
+          bool exists = allSuggestions
+              .any((existing) => existing.placeId == textSuggestion.placeId);
           if (!exists) {
             allSuggestions.add(textSuggestion);
           }
         }
-        debugPrint(
-            'MapService: Total suggestions after text search: ${allSuggestions.length}');
+      } else {
+        // No location - fallback to text search only
+        allSuggestions = await _getTextSearchPlaces(input, null);
       }
 
-      // Return top 5 suggestions immediately
-      final finalSuggestions = allSuggestions.take(5).toList();
-      debugPrint(
-          'MapService: Returning ${finalSuggestions.length} final suggestions');
-
-      for (int i = 0; i < finalSuggestions.length; i++) {
-        debugPrint(
-            'MapService: Suggestion ${i + 1}: ${finalSuggestions[i].name}');
+      // Sort by distance if location is available
+      if (location != null) {
+        allSuggestions
+            .sort((a, b) => a.distanceInMeters.compareTo(b.distanceInMeters));
       }
 
-      return finalSuggestions;
+      // Return top 3 results for MAV
+      final finalResults = allSuggestions.take(3).toList();
+
+      // Log the results for debugging
+      debugPrint('MapService: Found ${finalResults.length} place suggestions:');
+      for (int i = 0; i < finalResults.length; i++) {
+        debugPrint(
+            '  ${i + 1}. ${finalResults[i].name} - ${finalResults[i].distance}');
+      }
+
+      return finalResults;
     } catch (e) {
-      debugPrint('MapService: Error getting place suggestions: $e');
+      debugPrint('Error getting place suggestions: $e');
       return [];
     }
   }
 
-  /// Quick autocomplete suggestions
-  static Future<List<PlaceSuggestion>> _getAutocompleteSuggestions(
-      String input, LatLng? location) async {
+  /// Get nearby places using Nearby Search API
+  static Future<List<PlaceSuggestion>> _getNearbyPlaces(
+      String query, LatLng location) async {
     try {
-      String url =
-          'https://maps.googleapis.com/maps/api/place/autocomplete/json'
-          '?input=${Uri.encodeComponent(input)}'
-          '&types=establishment|geocode';
+      // Try multiple searches with different radii and types
+      List<PlaceSuggestion> suggestions = [];
 
-      if (location != null) {
-        url += '&location=${location.latitude},${location.longitude}'
-            '&radius=${_maxSearchRadius.toInt()}';
-      }
+      // Search 1: Small radius for very close places
+      final closeResults = await _performNearbySearch(query, location, 2000);
+      suggestions.addAll(closeResults);
 
-      url += '&key=$_googleApiKey';
-
-      final response = await http.get(Uri.parse(url));
-
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body);
-
-        if (data['status'] == 'OK' && data['predictions'] != null) {
-          List<PlaceSuggestion> suggestions = [];
-
-          for (var prediction in data['predictions']) {
-            final placeId = prediction['place_id'];
-            final description = prediction['description'] ?? '';
-            final structuredFormatting =
-                prediction['structured_formatting'] ?? {};
-            final mainText = structuredFormatting['main_text'] ?? description;
-            final secondaryText = structuredFormatting['secondary_text'] ?? '';
-
-            String enhancedDescription = mainText;
-            if (secondaryText.isNotEmpty) {
-              enhancedDescription += ' - $secondaryText';
-            }
-
-            suggestions.add(PlaceSuggestion(
-              placeId: placeId,
-              description: enhancedDescription,
-              distance: '',
-              distanceInMeters: 0,
-              name: mainText,
-              address: secondaryText,
-              types: (prediction['types'] as List<dynamic>?)?.join(', ') ?? '',
-              rating: '',
-              priceLevel: '',
-            ));
-          }
-
-          return suggestions;
+      // Search 2: Medium radius if we don't have enough results
+      if (suggestions.length < 5) {
+        final mediumResults = await _performNearbySearch(query, location, 5000);
+        for (final result in mediumResults) {
+          bool exists =
+              suggestions.any((existing) => existing.placeId == result.placeId);
+          if (!exists) suggestions.add(result);
         }
       }
 
-      return [];
+      return suggestions;
     } catch (e) {
-      debugPrint('MapService: Autocomplete exception: $e');
+      debugPrint('Error in nearby search: $e');
       return [];
     }
   }
 
-  /// Text search for backup results
+  /// Check if approaching a turn (100m threshold)
+  static bool isApproachingTurn(LatLng current, LatLng waypoint,
+      {double threshold = 100}) {
+    final distance = calculateDistance(current, waypoint);
+    return distance < threshold;
+  }
+
+  /// Check if reached the end of a step (15m threshold)
+  static bool hasReachedStepEnd(LatLng current, LatLng stepEnd,
+      {double threshold = 15}) {
+    final distance = calculateDistance(current, stepEnd);
+    return distance < threshold;
+  }
+
+  /// Check if reached final destination (20m threshold)
+  static bool hasReachedDestination(LatLng current, LatLng destination,
+      {double threshold = 20}) {
+    final distance = calculateDistance(current, destination);
+    return distance < threshold;
+  }
+
+  /// Calculate total remaining distance through all steps
+  static double calculateTotalRemainingDistance(
+    LatLng currentPosition,
+    List<NavigationStep> steps,
+    int currentStepIndex,
+  ) {
+    if (steps.isEmpty || currentStepIndex >= steps.length) return 0.0;
+
+    double totalDistance = 0.0;
+
+    // Distance from current position to end of current step
+    final currentStep = steps[currentStepIndex];
+    totalDistance +=
+        calculateDistance(currentPosition, currentStep.endLocation);
+
+    // Add distances of all remaining steps
+    for (int i = currentStepIndex + 1; i < steps.length; i++) {
+      totalDistance += steps[i].distanceValue.toDouble();
+    }
+
+    return totalDistance;
+  }
+
+  /// Perform a single nearby search
+  static Future<List<PlaceSuggestion>> _performNearbySearch(
+      String query, LatLng location, int radius) async {
+    final url = 'https://maps.googleapis.com/maps/api/place/nearbysearch/json'
+        '?location=${location.latitude},${location.longitude}'
+        '&radius=$radius'
+        '&keyword=${Uri.encodeComponent(query)}'
+        '&key=$_googleApiKey';
+
+    debugPrint('MapService: Nearby search URL: $url');
+
+    final response = await http.get(Uri.parse(url));
+
+    if (response.statusCode == 200) {
+      final data = json.decode(response.body);
+
+      if (data['status'] == 'OK') {
+        return _parseSearchResults(data['results'], location);
+      } else {
+        debugPrint('MapService: Nearby search status: ${data['status']}');
+      }
+    }
+
+    return [];
+  }
+
+  /// Get places using Text Search with location bias
   static Future<List<PlaceSuggestion>> _getTextSearchPlaces(
       String input, LatLng? location) async {
     try {
       String url = 'https://maps.googleapis.com/maps/api/place/textsearch/json'
           '?query=${Uri.encodeComponent(input)}';
 
+      // Add location bias for better proximity results
       if (location != null) {
         url += '&location=${location.latitude},${location.longitude}'
-            '&radius=${_maxSearchRadius.toInt()}';
+            '&radius=10000'; // 10km for text search
       }
 
       url += '&key=$_googleApiKey';
+
+      debugPrint('MapService: Text search URL: $url');
 
       final response = await http.get(Uri.parse(url));
 
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
 
-        if (data['status'] == 'OK' && data['results'] != null) {
-          return _parseSearchResults(data['results']);
+        if (data['status'] == 'OK') {
+          return _parseSearchResults(data['results'], location);
+        } else {
+          debugPrint('MapService: Text search status: ${data['status']}');
+          if (data['error_message'] != null) {
+            debugPrint('MapService: Error message: ${data['error_message']}');
+          }
         }
       }
 
       return [];
     } catch (e) {
-      debugPrint('MapService: Text search exception: $e');
+      debugPrint('Error in text search: $e');
       return [];
     }
   }
 
-  /// Parse search results
-  static List<PlaceSuggestion> _parseSearchResults(List results) {
+  /// Parse search results into PlaceSuggestion objects
+  static List<PlaceSuggestion> _parseSearchResults(
+      List results, LatLng? location) {
     List<PlaceSuggestion> suggestions = [];
 
-    for (var result in results.take(5)) {
+    for (var result in results) {
       final placeId = result['place_id'];
       final name = result['name'] ?? '';
       final address = result['vicinity'] ?? result['formatted_address'] ?? '';
+      final types = (result['types'] as List<dynamic>?)?.join(', ') ?? '';
       final rating = result['rating']?.toString() ?? '';
+      final priceLevel = result['price_level']?.toString() ?? '';
 
+      String distanceText = '';
+      double distanceInMeters = 0;
+
+      if (location != null && result['geometry']?['location'] != null) {
+        final lat = result['geometry']['location']['lat'];
+        final lng = result['geometry']['location']['lng'];
+
+        distanceInMeters = calculateDistance(
+          location,
+          LatLng(lat, lng),
+        );
+
+        distanceText = formatDistance(distanceInMeters);
+      }
+
+      // Create enhanced description
       String description = name;
       if (address.isNotEmpty) {
         description += ' - $address';
@@ -356,82 +419,24 @@ class MapService {
       if (rating.isNotEmpty) {
         description += ' ⭐ $rating';
       }
+      if (distanceText.isNotEmpty) {
+        description += ' ($distanceText)';
+      }
 
       suggestions.add(PlaceSuggestion(
         placeId: placeId,
         description: description,
-        distance: '',
-        distanceInMeters: 0,
+        distance: distanceText,
+        distanceInMeters: distanceInMeters,
         name: name,
         address: address,
-        types: (result['types'] as List<dynamic>?)?.join(', ') ?? '',
+        types: types,
         rating: rating,
-        priceLevel: '',
+        priceLevel: priceLevel,
       ));
     }
 
     return suggestions;
-  }
-
-  /// Get place details with distance calculation
-  static Future<PlaceSuggestion?> getPlaceDetailsWithDistance(
-      String placeId, LatLng? userLocation) async {
-    if (_googleApiKey.isEmpty) return null;
-
-    try {
-      final url = 'https://maps.googleapis.com/maps/api/place/details/json'
-          '?place_id=$placeId'
-          '&fields=geometry,name,vicinity,formatted_address,rating,types'
-          '&key=$_googleApiKey';
-
-      final response = await http.get(Uri.parse(url));
-
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body);
-
-        if (data['status'] == 'OK' && data['result'] != null) {
-          final result = data['result'];
-          final location = result['geometry']['location'];
-          final lat = location['lat'];
-          final lng = location['lng'];
-          final placeLocation = LatLng(lat, lng);
-
-          String distanceText = '';
-          double distanceInMeters = 0;
-
-          if (userLocation != null) {
-            distanceInMeters = calculateDistance(userLocation, placeLocation);
-            distanceText = formatDistance(distanceInMeters);
-
-            if (distanceInMeters > _maxSearchRadius) {
-              return null; // Too far
-            }
-          }
-
-          final name = result['name'] ?? '';
-          final address =
-              result['vicinity'] ?? result['formatted_address'] ?? '';
-          final rating = result['rating']?.toString() ?? '';
-
-          return PlaceSuggestion(
-            placeId: placeId,
-            description:
-                '$name - $address${distanceText.isNotEmpty ? ' ($distanceText)' : ''}',
-            distance: distanceText,
-            distanceInMeters: distanceInMeters,
-            name: name,
-            address: address,
-            types: (result['types'] as List<dynamic>?)?.join(', ') ?? '',
-            rating: rating,
-            priceLevel: '',
-          );
-        }
-      }
-    } catch (e) {
-      debugPrint('MapService: Error getting place details: $e');
-    }
-
-    return null;
   }
 
   /// Get place coordinates only
@@ -517,7 +522,15 @@ class MapService {
     instruction = instruction
         .replaceAll('Head', 'Walk')
         .replaceAll('Continue', 'Keep walking')
-        .replaceAll('Proceed', 'Continue');
+        .replaceAll('Proceed', 'Continue')
+        .replaceAll('Turn right', 'Turn right')
+        .replaceAll('Turn left', 'Turn left')
+        .replaceAll('Keep right', 'Stay to the right')
+        .replaceAll('Keep left', 'Stay to the left')
+        .replaceAll('Slight right', 'Turn slightly right')
+        .replaceAll('Slight left', 'Turn slightly left')
+        .replaceAll('Sharp right', 'Turn sharply right')
+        .replaceAll('Sharp left', 'Turn sharply left');
 
     return instruction;
   }
@@ -533,6 +546,21 @@ class MapService {
 
     final bearing = math.atan2(y, x) * 180 / math.pi;
     return (bearing + 360) % 360; // Normalize to 0-360
+  }
+
+  static String getCardinalDirection(double bearing) {
+    const directions = [
+      'North',
+      'Northeast',
+      'East',
+      'Southeast',
+      'South',
+      'Southwest',
+      'West',
+      'Northwest'
+    ];
+    final index = ((bearing + 22.5) / 45).floor() % 8;
+    return directions[index];
   }
 
   static double calculateDistance(LatLng point1, LatLng point2) {
@@ -575,25 +603,72 @@ class MapService {
   }
 
   // Navigation helper methods
-  static bool isApproachingTurn(LatLng current, LatLng waypoint,
-      {double threshold = 100}) {
+  static bool isApproachingWaypoint(
+    LatLng current,
+    LatLng waypoint, {
+    double walkingThreshold = 50,
+    double turningThreshold = 30,
+    String? maneuver,
+  }) {
     final distance = calculateDistance(current, waypoint);
-    return distance < threshold;
+
+    // Use different thresholds based on the type of maneuver
+    if (maneuver != null &&
+        (maneuver.contains('turn') ||
+            maneuver.contains('right') ||
+            maneuver.contains('left'))) {
+      return distance < turningThreshold;
+    }
+
+    return distance < walkingThreshold;
   }
 
-  static bool hasReachedStepEnd(LatLng current, LatLng stepEnd,
-      {double threshold = 15}) {
-    final distance = calculateDistance(current, stepEnd);
-    return distance < threshold;
+  static bool hasReachedWaypoint(LatLng current, LatLng waypoint,
+      {double radius = 15}) {
+    final distance = calculateDistance(current, waypoint);
+    return distance < radius;
   }
 
-  static bool hasReachedDestination(LatLng current, LatLng destination,
-      {double threshold = 20}) {
-    final distance = calculateDistance(current, destination);
-    return distance < threshold;
+  static bool isOffRoute(
+      LatLng currentPosition, LatLng startPoint, LatLng endPoint,
+      {double threshold = 25}) {
+    final distanceToRoute =
+        calculateDistanceToLineSegment(currentPosition, startPoint, endPoint);
+    return distanceToRoute > threshold;
   }
 
-  static double calculateTotalRemainingDistance(
+  static double calculateDistanceToLineSegment(
+      LatLng point, LatLng lineStart, LatLng lineEnd) {
+    final A = point.latitude - lineStart.latitude;
+    final B = point.longitude - lineStart.longitude;
+    final C = lineEnd.latitude - lineStart.latitude;
+    final D = lineEnd.longitude - lineStart.longitude;
+
+    final dot = A * C + B * D;
+    final lenSq = C * C + D * D;
+
+    if (lenSq == 0) {
+      return calculateDistance(point, lineStart);
+    }
+
+    final param = dot / lenSq;
+
+    LatLng closestPoint;
+    if (param < 0) {
+      closestPoint = lineStart;
+    } else if (param > 1) {
+      closestPoint = lineEnd;
+    } else {
+      closestPoint = LatLng(
+        lineStart.latitude + param * C,
+        lineStart.longitude + param * D,
+      );
+    }
+
+    return calculateDistance(point, closestPoint);
+  }
+
+  static double calculateRemainingDistance(
     LatLng currentPosition,
     List<NavigationStep> steps,
     int currentStepIndex,
@@ -602,14 +677,39 @@ class MapService {
 
     double totalDistance = 0.0;
 
+    // Distance from current position to end of current step
     final currentStep = steps[currentStepIndex];
     totalDistance +=
         calculateDistance(currentPosition, currentStep.endLocation);
 
+    // Add distances of all remaining steps
     for (int i = currentStepIndex + 1; i < steps.length; i++) {
-      totalDistance += steps[i].distanceValue.toDouble();
+      totalDistance += steps[i].distanceValue;
     }
 
     return totalDistance;
+  }
+
+  static String generateTTSInstruction(
+    NavigationStep step, {
+    double? distanceToStep,
+    bool isApproaching = false,
+    bool isImmediate = false,
+  }) {
+    String instruction = step.instruction;
+
+    if (isApproaching && distanceToStep != null) {
+      if (distanceToStep > 100) {
+        instruction = "In ${(distanceToStep).round()} meters, $instruction";
+      } else if (distanceToStep > 50) {
+        instruction = "In about 50 meters, $instruction";
+      } else {
+        instruction = "Soon, $instruction";
+      }
+    } else if (isImmediate) {
+      instruction = "Now, $instruction";
+    }
+
+    return instruction;
   }
 }

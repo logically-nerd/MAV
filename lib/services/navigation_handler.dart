@@ -4,6 +4,7 @@ import 'tts_service.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'map_service.dart';
 import 'conversation_service/confirmation_handler.dart';
+import 'package:speech_to_text/speech_to_text.dart' as stt;
 
 class NavigationHandler {
   static final NavigationHandler instance = NavigationHandler._internal();
@@ -50,47 +51,87 @@ class NavigationHandler {
       if (confirmed == true) {
         print("[NavigationHandler] User confirmed navigation");
 
+        // Add a TTS message to inform user we're searching
+        await _ttsService.speakAndWait(
+          "Searching for $destination...",
+          TtsPriority.conversation,
+        );
+
         // Search for the destination
         final currentLocation = await MapService.getCurrentLocation();
         if (currentLocation != null) {
           print("[NavigationHandler] Current location: $currentLocation");
 
-          // Get quick suggestions first
+          // Get 3 suggestions first
           final suggestions = await MapService.getPlaceSuggestions(
               destination, currentLocation);
           print("[NavigationHandler] Got ${suggestions.length} suggestions");
 
           if (suggestions.isNotEmpty) {
-            final bestMatch = suggestions.first;
-            print("[NavigationHandler] Selected: ${bestMatch.name}");
+            PlaceSuggestion? selectedPlace;
 
-            // Get detailed info with distance calculation
-            final detailedPlace = await MapService.getPlaceDetailsWithDistance(
-                bestMatch.placeId, currentLocation);
+            // ALWAYS present options to user - even if only 1 result
+            if (suggestions.length == 1) {
+              // Even with 1 option, let user confirm
+              await _ttsService.speakAndWait(
+                "I found one option: ${suggestions.first.name} at ${suggestions.first.distance}. Do you want to navigate there?",
+                TtsPriority.confirmation,
+              );
+              // Add proper delay AFTER TTS completes
+              print(
+                  "[NavigationHandler] ⏱️ Pausing after TTS before confirmation...");
+              await Future.delayed(Duration(milliseconds: 1500));
+              print(
+                  "[NavigationHandler] ⏱️ Pause complete, starting confirmation...");
 
-            if (detailedPlace != null) {
-              // Check if the destination is too far (beyond 10km)
-              if (detailedPlace.distanceInMeters > 10000) {
+              final userConfirmed =
+                  await _confirmationHandler.confirmAwareness();
+              if (userConfirmed == true) {
+                selectedPlace = suggestions.first;
                 await _ttsService.speakAndWait(
-                  "The destination $destination is ${detailedPlace.distance} away, which is very far. Please choose a closer location within 10 kilometers.",
-                  TtsPriority.conversation, // Keep as conversation
+                  "Proceeding with navigation to ${selectedPlace.name}.",
+                  TtsPriority.conversation,
+                );
+              } else {
+                await _ttsService.speakAndWait(
+                  "Navigation cancelled.",
+                  TtsPriority.conversation,
+                );
+                return;
+              }
+            } else {
+              // Multiple options - let user choose
+              selectedPlace = await _presentPlaceOptions(suggestions);
+            }
+
+            if (selectedPlace != null) {
+              // Check if the selected place is too far (beyond 10km)
+              if (selectedPlace.distanceInMeters > 10000) {
+                await _ttsService.speakAndWait(
+                  "The destination ${selectedPlace.name} is ${selectedPlace.distance} away, which is very far. Please choose a closer location within 10 kilometers.",
+                  TtsPriority.conversation,
                 );
                 return;
               }
 
               // Get coordinates for navigation
               final location =
-                  await MapService.getPlaceDetails(bestMatch.placeId);
+                  await MapService.getPlaceDetails(selectedPlace.placeId);
 
               if (location != null) {
+                String confirmationText =
+                    "Starting navigation to ${selectedPlace.name}";
+                if (selectedPlace.distance.isNotEmpty) {
+                  confirmationText +=
+                      ", which is ${selectedPlace.distance} away";
+                }
+
                 await _ttsService.speakAndWait(
-                  "Starting navigation to $destination, which is ${detailedPlace.distance} away",
-                  TtsPriority.conversation, // Keep as conversation
-                );
+                    confirmationText, TtsPriority.conversation);
 
                 // Call the callback to update the map
                 if (onDestinationFound != null) {
-                  onDestinationFound!(location, destination);
+                  onDestinationFound!(location, selectedPlace.name);
                 }
 
                 // Wait a moment for the route to load
@@ -102,20 +143,20 @@ class NavigationHandler {
                 }
               } else {
                 await _ttsService.speakAndWait(
-                  "Sorry, I couldn't find the exact location for $destination",
+                  "Sorry, I couldn't find the exact location for ${selectedPlace.name}",
                   TtsPriority.conversation,
                 );
               }
             } else {
               await _ttsService.speakAndWait(
-                "The destination $destination is too far away. Please choose a location within 10 kilometers.",
+                "No destination selected. Navigation cancelled.",
                 TtsPriority.conversation,
               );
             }
           } else {
             print("[NavigationHandler] No suggestions found!");
             await _ttsService.speakAndWait(
-              "Sorry, I couldn't find $destination. Please try a different location.",
+              "Sorry, I couldn't find $destination within 10 kilometers. Please try a different location.",
               TtsPriority.conversation,
             );
           }
@@ -129,18 +170,263 @@ class NavigationHandler {
         await _ttsService.speakAndWait(
             "Navigation cancelled.", TtsPriority.conversation);
       }
-      //  else {
-      //   await _ttsService.speakAndWait(
-      //     "I didn't understand your response. Please try again.",
-      //     TtsPriority.conversation,
-      //   );
-      // }
     } catch (e) {
       print("[NavigationHandler] Error: $e");
       await _ttsService.speakAndWait(
         "Sorry, there was an error. Please try again.",
         TtsPriority.conversation,
       );
+    }
+  }
+
+  /// Present place options to user and get their selection
+  Future<PlaceSuggestion?> _presentPlaceOptions(
+      List<PlaceSuggestion> suggestions) async {
+    try {
+      // Build the options announcement
+      String optionsText = "I found ${suggestions.length} options: ";
+
+      for (int i = 0; i < suggestions.length; i++) {
+        optionsText += "${i + 1}. ${suggestions[i].name}";
+        if (suggestions[i].distance.isNotEmpty) {
+          optionsText += " at ${suggestions[i].distance}";
+        }
+
+        if (i < suggestions.length - 1) {
+          optionsText += ", ";
+        } else {
+          optionsText +=
+              ". Please say the number of your choice, from 1 to ${suggestions.length}.";
+        }
+      }
+      // Announce the options
+      await _ttsService.speakAndWait(optionsText, TtsPriority.confirmation);
+
+      // Add a pause before starting STT to ensure TTS is completely finished
+      print("[NavigationHandler] ⏱️ Pausing after TTS before starting STT...");
+      await Future.delayed(Duration(milliseconds: 1500));
+      print("[NavigationHandler] ⏱️ Pause complete, starting STT...");
+
+      // Listen for user's choice
+      final selectedIndex = await _listenForNumberChoice(suggestions.length);
+
+      if (selectedIndex != null &&
+          selectedIndex >= 0 &&
+          selectedIndex < suggestions.length) {
+        final selectedPlace = suggestions[selectedIndex];
+
+        await _ttsService.speakAndWait(
+          "You selected ${selectedPlace.name}. Proceeding with navigation.",
+          TtsPriority.conversation,
+        );
+
+        return selectedPlace;
+      } else {
+        await _ttsService.speakAndWait(
+          "Invalid selection or no choice made. Using the nearest option: ${suggestions.first.name}.",
+          TtsPriority.conversation,
+        );
+        return suggestions.first; // Default to nearest
+      }
+    } catch (e) {
+      print("[NavigationHandler] Error in place selection: $e");
+      await _ttsService.speakAndWait(
+        "Error in selection. Using the nearest option: ${suggestions.first.name}.",
+        TtsPriority.conversation,
+      );
+      return suggestions.first; // Default to nearest
+    }
+  }
+
+  Future<int?> _listenForNumberChoice(int maxOptions) async {
+    try {
+      print(
+          "[NavigationHandler] 🎤 Starting number choice listening (max: $maxOptions)");
+
+      // Use ConfirmationHandler's STT
+      if (!_confirmationHandler.isInitialized ||
+          !_confirmationHandler.speech.isAvailable) {
+        print("[NavigationHandler] ❌ STT not available");
+        return null;
+      }
+
+      final completer = Completer<int?>();
+      bool resultHandled = false;
+      Timer? timeoutTimer;
+
+      // Set status listener BEFORE starting STT
+      _confirmationHandler.speech.statusListener = (status) async {
+        print("[NavigationHandler] 📡 STT Status: $status");
+
+        if (status == "listening") {
+          print("[NavigationHandler] ✅ STT started listening successfully");
+        } else if (status == "notListening" &&
+            !resultHandled &&
+            !completer.isCompleted) {
+          await Future.delayed(Duration(milliseconds: 500));
+          if (!resultHandled && !completer.isCompleted) {
+            resultHandled = true;
+            print(
+                "[NavigationHandler] 🛑 STT stopped listening without result");
+            completer.complete(null);
+          }
+        }
+      };
+
+      // Start timeout timer AFTER setting status listener
+      timeoutTimer = Timer(Duration(seconds: 15), () {
+        if (!completer.isCompleted) {
+          resultHandled = true;
+          print("[NavigationHandler] ⏰ Timeout waiting for number choice");
+          completer.complete(null);
+        }
+      });
+
+      try {
+        // IMPORTANT: Don't try to capture return value - this causes the null/bool type error
+        _confirmationHandler.speech.listen(
+          onResult: (result) {
+            print(
+                "[NavigationHandler] 📝 STT Result: '${result.recognizedWords}' (final: ${result.finalResult})");
+
+            if (result.finalResult && !resultHandled) {
+              resultHandled = true;
+              final spokenText = result.recognizedWords.toLowerCase().trim();
+              print(
+                  "[NavigationHandler] 🎯 Processing final result: '$spokenText'");
+
+              int? choice = _parseSpokenNumber(spokenText, maxOptions);
+              print("[NavigationHandler] 🔢 Parsed choice: $choice");
+
+              if (!completer.isCompleted) {
+                completer.complete(choice);
+              }
+            }
+          },
+          listenFor: Duration(seconds: 10),
+          pauseFor: Duration(seconds: 3),
+          partialResults: true,
+          cancelOnError: false, // Change to false to prevent early cancellation
+        );
+
+        return await completer.future;
+      } catch (e) {
+        print("[NavigationHandler] ❌ Exception during STT listen: $e");
+        if (!completer.isCompleted) {
+          completer.complete(null);
+        }
+        return null;
+      } finally {
+        timeoutTimer?.cancel();
+
+        try {
+          if (_confirmationHandler.speech.isListening) {
+            await _confirmationHandler.speech.stop();
+          }
+          _confirmationHandler.speech.statusListener = null;
+        } catch (e) {
+          print("[NavigationHandler] ⚠ Error in STT cleanup: $e");
+        }
+      }
+    } catch (e) {
+      print("[NavigationHandler] ❌ Error in number choice listening: $e");
+      return null;
+    }
+  }
+
+  /// Parse spoken text to extract number choice
+  int? _parseSpokenNumber(String spokenText, int maxOptions) {
+    if (spokenText.isEmpty) {
+      print("[NavigationHandler] ❌ Empty spoken text");
+      return null;
+    }
+
+    try {
+      print(
+          "[NavigationHandler] 🔍 Parsing: '$spokenText' (max options: $maxOptions)");
+
+      // Clean up text and convert to lowercase
+      String cleanText = spokenText
+          .toLowerCase()
+          .replaceAll(
+              RegExp(
+                  r'\b(option|number|choice|select|go|to|the|please|i|want|choose|pick|say|like)\b'),
+              '')
+          .replaceAll(RegExp(r'[,.?!]'), ' ')
+          .replaceAll(RegExp(r'\s+'), ' ')
+          .trim();
+
+      print("[NavigationHandler] 🧹 Cleaned text: '$cleanText'");
+
+      // First option patterns (index 0)
+      if (RegExp(
+              r'\b(1|one|first|1st|number one|option one|first option|first choice)\b')
+          .hasMatch(cleanText)) {
+        print("[NavigationHandler] ✅ Matched first option");
+        return 0;
+      }
+
+      // Second option patterns (index 1)
+      if (maxOptions > 1 &&
+          RegExp(r'\b(2|two|second|2nd|number two|option two|second option|second choice)\b')
+              .hasMatch(cleanText)) {
+        print("[NavigationHandler] ✅ Matched second option");
+        return 1;
+      }
+
+      // Third option patterns (index 2)
+      if (maxOptions > 2 &&
+          RegExp(r'\b(3|three|third|3rd|number three|option three|third option|third choice)\b')
+              .hasMatch(cleanText)) {
+        print("[NavigationHandler] ✅ Matched third option");
+        return 2;
+      }
+
+      // Additional generic checks for numbers anywhere in the text
+      if (cleanText.contains('1') ||
+          cleanText.contains(' one ') ||
+          cleanText.startsWith('one ') ||
+          cleanText.endsWith(' one')) {
+        return 0;
+      } else if (maxOptions > 1 &&
+          (cleanText.contains('2') ||
+              cleanText.contains(' two ') ||
+              cleanText.startsWith('two ') ||
+              cleanText.endsWith(' two'))) {
+        return 1;
+      } else if (maxOptions > 2 &&
+          (cleanText.contains('3') ||
+              cleanText.contains(' three ') ||
+              cleanText.startsWith('three ') ||
+              cleanText.endsWith(' three'))) {
+        return 2;
+      }
+
+      // Try parsing as integer from individual words
+      final words = cleanText.split(' ');
+      for (String word in words) {
+        final num = int.tryParse(word);
+        if (num != null && num >= 1 && num <= maxOptions) {
+          return num - 1;
+        }
+      }
+
+      // Try advanced matching for phrases like "I want the second one"
+      if (cleanText.contains('first') || cleanText.contains('1st')) {
+        return 0;
+      } else if (maxOptions > 1 &&
+          (cleanText.contains('second') || cleanText.contains('2nd'))) {
+        return 1;
+      } else if (maxOptions > 2 &&
+          (cleanText.contains('third') || cleanText.contains('3rd'))) {
+        return 2;
+      }
+
+      print("[NavigationHandler] ❌ No option match found");
+      return null;
+    } catch (e) {
+      print("[NavigationHandler] ❌ Error parsing spoken number: $e");
+      return null;
     }
   }
 

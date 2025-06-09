@@ -8,6 +8,9 @@ class ConfirmationHandler {
   final TtsService _ttsService = TtsService.instance;
   bool _isInitialized = false;
 
+  stt.SpeechToText get speech => _speech;
+  bool get isInitialized => _isInitialized;
+
   Future<void> preload() async {
     print("[Confirm] Preloading STT...");
     try {
@@ -90,6 +93,8 @@ class ConfirmationHandler {
     return null;
   }
 
+  // Replace the _listenForAffirmation method in ConfirmationHandler:
+
   Future<bool?> _listenForAffirmation() async {
     if (!_isInitialized) {
       print("[Confirm] ❌ STT not initialized for listening");
@@ -97,67 +102,37 @@ class ConfirmationHandler {
     }
 
     final completer = Completer<bool?>();
-    Timer? timeoutTimer;
-    bool sttActuallyStarted = false;
-    bool listenAttempted = false;
+    bool resultHandled = false;
 
     try {
-      print("[Confirm] 🎤 Attempting to start STT...");
+      print("[Confirm] 🎤 Starting STT...");
 
-      // Set up status listener to detect when STT actually starts
-      _speech.statusListener = (status) {
+      // Use a simpler status listener like ConversationService
+      _speech.statusListener = (status) async {
         print("[Confirm] 📡 STT Status: $status");
 
-        if (status == "listening" && !sttActuallyStarted) {
-          sttActuallyStarted = true;
-          print(
-              "[Confirm] ✅ STT actually started listening - NOW starting timeout");
-
-          // Start timeout timer ONLY when STT actually begins listening
-          timeoutTimer = Timer(const Duration(seconds: 10), () {
-            if (!completer.isCompleted) {
-              print("[Confirm] ⏰ STT timeout reached");
-              _speech.stop();
-              completer.complete(null);
-            }
-          });
-        }
-
         if (status == "notListening" &&
-            sttActuallyStarted &&
+            !resultHandled &&
             !completer.isCompleted) {
-          print("[Confirm] 🔇 STT stopped listening without result");
-          // Give a moment for final result to come in
-          Timer(Duration(milliseconds: 500), () {
-            if (!completer.isCompleted) {
-              print("[Confirm] 📭 No final result received");
-              completer.complete(null);
-            }
-          });
-        }
-
-        if (status == "done" && !completer.isCompleted) {
-          print("[Confirm] 🏁 STT marked as done");
-          // Give a moment for final result to come in
-          Timer(Duration(milliseconds: 300), () {
-            if (!completer.isCompleted) {
-              print("[Confirm] 📭 STT done but no result");
-              completer.complete(null);
-            }
-          });
+          await Future.delayed(Duration(milliseconds: 500));
+          if (!resultHandled && !completer.isCompleted) {
+            resultHandled = true;
+            completer.complete(null);
+          }
         }
       };
 
-      // Start listening - ignore the return value, rely on status listener
-      final listenResult = await _speech.listen(
-        listenMode: stt.ListenMode.confirmation,
-        pauseFor: const Duration(seconds: 3),
-        listenFor: const Duration(seconds: 8),
+      // Use the same parameters as ConversationService (known to work)
+      await _speech.listen(
+        pauseFor: const Duration(seconds: 5),
+        listenFor: const Duration(seconds: 12),
+        // Remove listenMode parameter to use default like ConversationService
         onResult: (result) {
           print(
               "[Confirm] 📝 STT Result: '${result.recognizedWords}' (final: ${result.finalResult})");
 
-          if (result.finalResult && !completer.isCompleted) {
+          if (result.finalResult && !resultHandled) {
+            resultHandled = true;
             final transcript = result.recognizedWords.toLowerCase().trim();
             print("[Confirm] 🔍 Processing final transcript: '$transcript'");
 
@@ -178,48 +153,32 @@ class ConfirmationHandler {
         },
       );
 
-      listenAttempted = true;
-      print(
-          "[Confirm] 📞 STT listen() called (returned: $listenResult), waiting for status...");
-
-      // Set up a backup timer in case the status never changes to "listening"
-      Timer(const Duration(seconds: 3), () {
-        if (!sttActuallyStarted && !completer.isCompleted) {
-          print("[Confirm] ⚠ STT didn't start listening after 3 seconds");
-          // Check if STT is available
-          if (!_speech.isAvailable) {
-            print("[Confirm] ❌ STT is not available");
-            completer.complete(null);
-          } else {
-            print(
-                "[Confirm] ❌ STT available but didn't start - assuming failure");
-            completer.complete(null);
-          }
+      // Use a simple timeout like ConversationService
+      Timer(Duration(seconds: 15), () {
+        if (!completer.isCompleted) {
+          resultHandled = true;
+          print("[Confirm] ⏰ Timeout reached");
+          completer.complete(null);
         }
       });
+
+      return await completer.future;
     } catch (e) {
-      print("[Confirm] ❌ Exception during STT setup: $e");
-      completer.complete(null);
-    }
-
-    // Wait for result
-    final result = await completer.future;
-
-    // Cleanup
-    timeoutTimer?.cancel();
-    if (listenAttempted || sttActuallyStarted) {
+      print("[Confirm] ❌ Exception during STT: $e");
+      return null;
+    } finally {
+      // Cleanup
       try {
-        await _speech.stop();
+        if (_speech.isListening) {
+          await _speech.stop();
+        }
       } catch (e) {
         print("[Confirm] ⚠ Error stopping STT: $e");
       }
+
+      // Reset status listener
+      _speech.statusListener = null;
     }
-
-    // Reset status listener
-    _speech.statusListener = null;
-
-    print("[Confirm] 🏁 Listening session ended with result: $result");
-    return result;
   }
 
   bool _isAffirmative(String input) {
