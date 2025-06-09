@@ -7,6 +7,7 @@ enum TtsPriority {
   sos, // Highest priority for emergencies
   conversation, // Regular conversational feedback
   confirmation, // For confirmation prompts - higher than regular conversation
+  awareness, // For awareness-related instructions
   orientation, // For orientation-related instructions
   map, // Navigational instructions
   model, // For model-related instructions
@@ -43,6 +44,19 @@ class TtsService {
 
   // Track current request priority
   TtsPriority? _currentRequestPriority;
+
+  List<TtsPriority> _allowedPriorities = TtsPriority.values.toList();
+
+  void blockAllExcept(List<TtsPriority> priorities) {
+    print("[TTS Service] 🚫 Blocking all priorities except: $priorities");
+    _blockLowPriority = true;
+    _allowedPriorities = priorities;
+  }
+
+  // Then modify _shouldBlock:
+  bool _shouldBlock(TtsPriority priority) {
+    return _blockLowPriority && !_allowedPriorities.contains(priority);
+  }
 
   Future<void> init() async {
     await _flutterTts.setLanguage("en-US");
@@ -179,12 +193,12 @@ class TtsService {
     print("[TTS Service] ✅ speakAndWait completed for: '$text'");
   }
 
-  bool _shouldBlock(TtsPriority priority) {
-    // Only allow SOS, conversation, and confirmation when blocked
-    return priority != TtsPriority.sos &&
-        priority != TtsPriority.conversation &&
-        priority != TtsPriority.confirmation;
-  }
+  // bool _shouldBlock(TtsPriority priority) {
+  //   // Only allow SOS, conversation, and confirmation when blocked
+  //   return priority != TtsPriority.sos &&
+  //       priority != TtsPriority.conversation &&
+  //       priority != TtsPriority.confirmation;
+  // }
 
   bool _shouldInterrupt(TtsPriority newPriority) {
     if (_currentRequestPriority == null) return false;
@@ -281,12 +295,19 @@ class TtsService {
   void blockLowPriority() {
     print("[TTS Service] 🚫 Blocking low priority requests");
     _blockLowPriority = true;
+    _allowedPriorities = [
+      TtsPriority.sos,
+      TtsPriority.awareness,
+      TtsPriority.conversation,
+      TtsPriority.confirmation
+    ];
   }
 
   /// Unblock low priority TTS after STT
   void unblockLowPriority() {
     print("[TTS Service] ✅ Unblocking low priority requests");
     _blockLowPriority = false;
+    _allowedPriorities = TtsPriority.values.toList();
   }
 
   /// Stop current speech and clear queue
@@ -316,4 +337,9 @@ class TtsService {
 
   /// Check if currently speaking
   bool get isSpeaking => _isSpeaking;
+
+  /// Check if a specific priority is blocked
+  bool isPriorityBlocked(TtsPriority priority) {
+    return _blockLowPriority && !_allowedPriorities.contains(priority);
+  }
 }

@@ -44,6 +44,13 @@ class ConfirmationHandler {
 
   Future<bool?> confirmAwareness() async {
     print("[Confirm] Confirming awareness intent");
+    await _ttsService.speakAndWait(
+        "You asked for surrounding awareness. Is that correct? Please say yes or no.",
+        TtsPriority.confirmation);
+
+    // Small pause before listening to ensure TTS is complete
+    await Future.delayed(const Duration(milliseconds: 300));
+
     return _askAndListen(
         "You asked for surrounding awareness. Is that correct?");
   }

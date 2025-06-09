@@ -1,5 +1,6 @@
 import 'dart:ui';
 import 'package:MAV/screens/map_screen.dart';
+import 'package:MAV/screens/awareness_camera_screen.dart';
 import 'package:MAV/services/safe_path_service/calibration_service.dart';
 import 'package:MAV/services/safe_path_service/pipeline_controller.dart';
 import 'package:MAV/services/safe_path_service/pipeline_models.dart';
@@ -17,6 +18,7 @@ import 'package:speech_to_text/speech_to_text.dart' as stt;
 import 'package:ultralytics_yolo/yolo_result.dart';
 import 'package:ultralytics_yolo/yolo_task.dart';
 import 'dart:async'; // Add for Timer
+import 'package:MAV/services/surrounding_awareness/awareness_handler.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -151,13 +153,24 @@ class _HomePageState extends State<HomePage> {
   Timer? _periodicTimer;
 
   static const Duration PERIODIC_INTERVAL = Duration(seconds: 7);
+  bool _isAwarenessMode = false;
+  StreamSubscription? _awarenessSubscription;
 
   @override
   void initState() {
     super.initState();
     _pipelineController = NavigationPipelineController();
-    // Remove the local TTS initialization
-    // _initializeTts();
+    print("HomePage: NavigationPipelineController initialized.");
+
+    // Subscribe to awareness state changes
+    _awarenessSubscription =
+        AwarenessHandler.instance.awarenessStateStream.listen((isActive) {
+      print("[Main] Awareness mode state changed to: $isActive");
+      setState(() {
+        _isAwarenessMode = isActive;
+      });
+    });
+
     print("HomePage: NavigationPipelineController initialized.");
   }
 
@@ -167,6 +180,7 @@ class _HomePageState extends State<HomePage> {
     // Remove direct TTS stop call - it's handled by the service
     // _flutterTts.stop();
     KeepScreenOn.turnOff();
+    _awarenessSubscription?.cancel();
     super.dispose();
   }
 
@@ -299,7 +313,6 @@ class _HomePageState extends State<HomePage> {
           padding: const EdgeInsets.fromLTRB(6, 4, 0, 4),
           child: Row(
             mainAxisAlignment: MainAxisAlignment.start,
-            spacing: 13,
             children: [
               Text(
                 'MAV',
@@ -312,104 +325,108 @@ class _HomePageState extends State<HomePage> {
             ],
           ),
         ),
-        backgroundColor: Colors.blueAccent,
+        backgroundColor:
+            _isAwarenessMode ? Colors.deepPurple : Colors.blueAccent,
       ),
-      body: Stack(
-        children: [
-          // Main Content: Camera view and status bar
-          Column(
-            children: [
-              Expanded(
-                flex: 4,
-                // child: YoloSegmentation(
-                //   modelAssetPath: 'assets/models/v11_best_float32.tflite',
-                //   task: YOLOTask.segment,
-                //   showControls: false,
-                //   onResultsUpdated: _onResultsReceived,
+      body: _isAwarenessMode
+          ? const AwarenessCameraScreen() // Show awareness camera screen
+          : Stack(
+              children: [
+                // Main Content: Camera view and status bar
+                Column(
+                  children: [
+                    Expanded(
+                      flex: 4,
+                      // child: YoloSegmentation(
+                      //   modelAssetPath: 'assets/models/v11_best_float32.tflite',
+                      //   task: YOLOTask.segment,
+                      //   showControls: false,
+                      //   onResultsUpdated: _onResultsReceived,
+                      // ),
+                      child: const MapScreen(),
+                    ),
+                    Container(
+                      height: 80,
+                      width: double.infinity,
+                      color: Colors.black87,
+                      child: Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            if (_latestPipelineOutput != null)
+                              Text(
+                                _formatCommandForSpeech(_latestPipelineOutput!
+                                        .navigationCommand.primaryAction)
+                                    .toUpperCase(),
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 24,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              )
+                            else
+                              Text(
+                                _isModelReady ? 'READY' : 'INITIALIZING...',
+                                style: TextStyle(
+                                  color: Colors.white70,
+                                  fontSize: 18,
+                                ),
+                              ),
+                            if (_latestPipelineOutput != null)
+                              Text(
+                                'Confidence: ${(_latestPipelineOutput!.navigationCommand.confidence * 100).toStringAsFixed(1)}%',
+                                style: TextStyle(
+                                    color: Colors.white70, fontSize: 14),
+                              ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+
+                // Top-right floating map
+                // Positioned(
+                //   top: 16,
+                //   right: 16,
+                //   child: Container(
+                //     width: 100,
+                //     height: 160,
+                //     decoration: BoxDecoration(
+                //       color: Colors.white,
+                //       borderRadius: BorderRadius.circular(12),
+                //       boxShadow: [
+                //         BoxShadow(
+                //           color: Colors.black26,
+                //           blurRadius: 8,
+                //           offset: Offset(0, 2),
+                //         ),
+                //       ],
+                //     ),
+                //     // child: const MapScreen(),
+                //     child: YoloSegmentation(
+                //       modelAssetPath: 'assets/models/v11_best_float32.tflite',
+                //       task: YOLOTask.segment,
+                //       showControls: false,
+                //       onResultsUpdated: _onResultsReceived,
+                //     ),
+                //   ),
                 // ),
-                child: const MapScreen(),
-              ),
-              Container(
-                height: 80,
-                width: double.infinity,
-                color: Colors.black87,
-                child: Center(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      if (_latestPipelineOutput != null)
-                        Text(
-                          _formatCommandForSpeech(_latestPipelineOutput!
-                                  .navigationCommand.primaryAction)
-                              .toUpperCase(),
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontSize: 24,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        )
-                      else
-                        Text(
-                          _isModelReady ? 'READY' : 'INITIALIZING...',
-                          style: TextStyle(
-                            color: Colors.white70,
-                            fontSize: 18,
-                          ),
-                        ),
-                      if (_latestPipelineOutput != null)
-                        Text(
-                          'Confidence: ${(_latestPipelineOutput!.navigationCommand.confidence * 100).toStringAsFixed(1)}%',
-                          style: TextStyle(color: Colors.white70, fontSize: 14),
-                        ),
-                    ],
+
+                // High z-index full-screen overlay
+                Positioned.fill(
+                  child: ClipRect(
+                    child: BackdropFilter(
+                      filter: ImageFilter.blur(sigmaX: 0.5, sigmaY: 0.5),
+                      child: Container(
+                        color: Colors.black.withAlpha(10),
+                        child: const IntentListenerWidget(),
+                      ),
+                    ),
                   ),
                 ),
-              ),
-            ],
-          ),
-
-          // Top-right floating map
-          // Positioned(
-          //   top: 16,
-          //   right: 16,
-          //   child: Container(
-          //     width: 100,
-          //     height: 160,
-          //     decoration: BoxDecoration(
-          //       color: Colors.white,
-          //       borderRadius: BorderRadius.circular(12),
-          //       boxShadow: [
-          //         BoxShadow(
-          //           color: Colors.black26,
-          //           blurRadius: 8,
-          //           offset: Offset(0, 2),
-          //         ),
-          //       ],
-          //     ),
-          //     // child: const MapScreen(),
-          //     child: YoloSegmentation(
-          //       modelAssetPath: 'assets/models/v11_best_float32.tflite',
-          //       task: YOLOTask.segment,
-          //       showControls: false,
-          //       onResultsUpdated: _onResultsReceived,
-          //     ),
-          //   ),
-          // ),
-
-          // High z-index full-screen overlay
-          Positioned.fill(
-            child: ClipRect(
-              child: BackdropFilter(
-                filter: ImageFilter.blur(sigmaX: 0.5, sigmaY: 0.5),
-                child: Container(
-                  color: Colors.black.withAlpha(10),
-                  child: const IntentListenerWidget(),
-                ),
-              ),
+              ],
             ),
-          ),
-        ],
-      ),
     );
   }
 }

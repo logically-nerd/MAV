@@ -1,11 +1,12 @@
 import 'dart:async';
+import 'package:MAV/services/surrounding_awareness/awareness_handler.dart';
 import 'package:flutter/services.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
 import '../tts_service.dart';
 import 'confirmation_handler.dart';
 import '../navigation_handler.dart';
 import '../sos_service.dart';
-// import '../awareness_handler.dart';
+ // Import the awareness handler
 
 enum IntentType {
   navigate,
@@ -197,9 +198,9 @@ class ConversationService {
         final confirmed = await _confirmationHandler.confirmAwareness();
         if (confirmed == true) {
           print("[Conversation] Awareness confirmed");
-          await _ttsService.speakAndWait(
-              "Starting awareness mode", TtsPriority.conversation);
-          // await AwarenessHandler.instance.startAwarenessMode();
+          // await _ttsService.speakAndWait(
+          //     "Starting awareness mode", TtsPriority.conversation);
+          await AwarenessHandler.instance.startAwarenessMode();
         } else {
           print("[Conversation] Awareness canceled by user");
           await _ttsService.speakAndWait(
