@@ -369,32 +369,32 @@ class _HomePageState extends State<HomePage> {
           ),
 
           // Top-right floating map
-          Positioned(
-            top: 16,
-            right: 16,
-            child: Container(
-              width: 100,
-              height: 160,
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(12),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black26,
-                    blurRadius: 8,
-                    offset: Offset(0, 2),
-                  ),
-                ],
-              ),
-              // child: const MapScreen(),
-              child: YoloSegmentation(
-                modelAssetPath: 'assets/models/v11_best_float32.tflite',
-                task: YOLOTask.segment,
-                showControls: false,
-                onResultsUpdated: _onResultsReceived,
-              ),
-            ),
-          ),
+          // Positioned(
+          //   top: 16,
+          //   right: 16,
+          //   child: Container(
+          //     width: 100,
+          //     height: 160,
+          //     decoration: BoxDecoration(
+          //       color: Colors.white,
+          //       borderRadius: BorderRadius.circular(12),
+          //       boxShadow: [
+          //         BoxShadow(
+          //           color: Colors.black26,
+          //           blurRadius: 8,
+          //           offset: Offset(0, 2),
+          //         ),
+          //       ],
+          //     ),
+          //     // child: const MapScreen(),
+          //     child: YoloSegmentation(
+          //       modelAssetPath: 'assets/models/v11_best_float32.tflite',
+          //       task: YOLOTask.segment,
+          //       showControls: false,
+          //       onResultsUpdated: _onResultsReceived,
+          //     ),
+          //   ),
+          // ),
 
           // High z-index full-screen overlay
           Positioned.fill(

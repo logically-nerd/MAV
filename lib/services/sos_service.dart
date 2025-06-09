@@ -16,25 +16,19 @@ class SOSService {
   }
 
   Future<void> triggerSOS() async {
-    // Speak out the emergency message with highest priority
-    final completer = Completer<void>();
-
-    _ttsService.speak(
-        "Emergency detected. Calling $emergencyNumber now.", TtsPriority.sos,
-        onComplete: () {
-      completer.complete();
-    });
-
-    // Wait for the initial message to complete
-    await completer.future;
+    // Speak out the emergency message with highest priority and wait for completion
+    await _ttsService.speakAndWait(
+      "Emergency detected. Calling emergency services.",
+      TtsPriority.sos,
+    );
 
     // Launch the emergency call directly
     bool? callMade = await FlutterPhoneDirectCaller.callNumber(emergencyNumber);
 
     if (callMade == true) {
-      _ttsService.speak("Emergency call initiated.", TtsPriority.sos);
+      print("[SOS] Emergency call initiated successfully");
     } else {
-      _ttsService.speak("Failed to initiate emergency call.", TtsPriority.sos);
+      print("[SOS] Failed to initiate emergency call");
     }
   }
 }

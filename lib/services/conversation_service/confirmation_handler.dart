@@ -17,9 +17,9 @@ class ConfirmationHandler {
       );
 
       if (_isInitialized) {
-        print("[Confirm] STT initialized successfully");
+        print("[Confirm] ✓ STT initialized successfully");
       } else {
-        print("[Confirm] STT initialization failed");
+        print("[Confirm] ✗ STT initialization failed");
       }
     } catch (e) {
       print("[Confirm] STT initialization exception: $e");
@@ -28,9 +28,15 @@ class ConfirmationHandler {
   }
 
   Future<bool?> confirmDestination(String destination) async {
-    print("[Confirm] Asking for confirmation: $destination");
-    return _askAndListen(
-        "You said navigate to $destination. Should I go ahead?");
+    print("[Confirm] Starting confirmation for destination: $destination");
+
+    // Use higher priority for confirmation prompts
+    await _ttsService.speakAndWait(
+      "Do you want to navigate to $destination? Please say yes or no.",
+      TtsPriority.confirmation, // Changed from conversation to confirmation
+    );
+
+    return await _askAndListen("Do you want to navigate to $destination?");
   }
 
   Future<bool?> confirmAwareness() async {
@@ -39,187 +45,171 @@ class ConfirmationHandler {
         "You asked for surrounding awareness. Is that correct?");
   }
 
-  // Improved method with proper TTS/STT sequencing
   Future<bool?> _askAndListen(String question) async {
-    if (!_isInitialized) {
-      print("[Confirm] STT not initialized, attempting to initialize...");
-      await preload();
-      if (!_isInitialized) {
-        print("[Confirm] Failed to initialize STT");
-        return null;
-      }
-    }
-
-    Completer<bool?> completer = Completer();
     int attempts = 0;
-    const maxAttempts = 2;
+    const int maxAttempts = 2;
 
-    // Overall timeout for the entire confirmation process
-    Timer? overallTimer = Timer(const Duration(seconds: 45), () {
-      if (!completer.isCompleted) {
-        print("[Confirm] Overall timeout reached");
-        completer.complete(null);
-      }
-    });
-
-    Future<void> ask() async {
-      if (attempts >= maxAttempts) {
-        print("[Confirm] Max attempts reached, giving up");
-
-        // Wait for TTS to complete before finishing
-        await _speakAndWait(
-          "Still didn't catch that. Please double tap to speak again.",
-          TtsPriority.conversation,
-        );
-
-        if (!completer.isCompleted) {
-          completer.complete(null);
-        }
-        return;
-      }
-
+    while (attempts < maxAttempts) {
       attempts++;
-      String message =
-          (attempts > 1) ? "Sorry, I didn't catch that. $question" : question;
-
-      print("[Confirm] Attempt $attempts: $message");
+      print("[Confirm] Attempt $attempts of $maxAttempts");
 
       try {
-        // 1. Speak and wait for completion
-        await _speakAndWait(message, TtsPriority.conversation);
+        // Small buffer to ensure everything is ready
+        await Future.delayed(const Duration(milliseconds: 300));
 
-        // 2. Add haptic feedback
-        HapticFeedback.heavyImpact();
-
-        // 3. Ensure TTS is completely finished with additional buffer
-        await Future.delayed(const Duration(milliseconds: 500));
-
-        // 4. Start listening (timeout starts here)
+        // Start listening for response
         final result = await _listenForAffirmation();
 
-        if (!completer.isCompleted) {
-          if (result != null) {
-            print("[Confirm] Got result: $result");
-            completer.complete(result);
-          } else {
-            print("[Confirm] No result, trying again...");
-            // If listening failed, ask again
-            await ask();
-          }
+        if (result != null) {
+          print("[Confirm] ✅ Got valid result: $result");
+          return result;
+        } else {
+          print("[Confirm] ❌ No valid result, will retry if attempts remain");
         }
       } catch (e) {
-        print("[Confirm] Error in ask attempt: $e");
-        if (!completer.isCompleted) {
-          completer.complete(null);
-        }
+        print("[Confirm] ❌ Error in attempt $attempts: $e");
+        break;
       }
     }
 
-    await ask(); // Start the first attempt
-
-    final result = await completer.future;
-    overallTimer?.cancel();
-    return result;
-  }
-
-  // Helper method to speak and wait for completion
-  Future<void> _speakAndWait(String text, TtsPriority priority) async {
-    Completer<void> ttsCompleter = Completer();
-
-    _ttsService.speak(
-      text,
-      priority,
-      onComplete: () {
-        print("[Confirm] TTS completed for: $text");
-        if (!ttsCompleter.isCompleted) {
-          ttsCompleter.complete();
-        }
-      },
+    // Max attempts reached
+    print("[Confirm] ❌ Max attempts reached, giving up");
+    await _ttsService.speakAndWait(
+      "I didn't catch your response. Please try the command again.",
+      TtsPriority.confirmation, // Use confirmation priority
     );
-
-    // Wait for TTS to complete with timeout
-    await ttsCompleter.future.timeout(
-      const Duration(seconds: 10),
-      onTimeout: () {
-        print("[Confirm] TTS timeout for: $text");
-      },
-    );
+    return null;
   }
 
   Future<bool?> _listenForAffirmation() async {
     if (!_isInitialized) {
-      print("[Confirm] STT not initialized for listening");
+      print("[Confirm] ❌ STT not initialized for listening");
       return null;
     }
 
-    Completer<bool?> completer = Completer();
-    bool isListening = false;
-    Timer? listeningTimer;
+    final completer = Completer<bool?>();
+    Timer? timeoutTimer;
+    bool sttActuallyStarted = false;
+    bool listenAttempted = false;
 
     try {
-      print("[Confirm] Starting to listen...");
+      print("[Confirm] 🎤 Attempting to start STT...");
 
-      isListening = await _speech.listen(
+      // Set up status listener to detect when STT actually starts
+      _speech.statusListener = (status) {
+        print("[Confirm] 📡 STT Status: $status");
+
+        if (status == "listening" && !sttActuallyStarted) {
+          sttActuallyStarted = true;
+          print(
+              "[Confirm] ✅ STT actually started listening - NOW starting timeout");
+
+          // Start timeout timer ONLY when STT actually begins listening
+          timeoutTimer = Timer(const Duration(seconds: 10), () {
+            if (!completer.isCompleted) {
+              print("[Confirm] ⏰ STT timeout reached");
+              _speech.stop();
+              completer.complete(null);
+            }
+          });
+        }
+
+        if (status == "notListening" &&
+            sttActuallyStarted &&
+            !completer.isCompleted) {
+          print("[Confirm] 🔇 STT stopped listening without result");
+          // Give a moment for final result to come in
+          Timer(Duration(milliseconds: 500), () {
+            if (!completer.isCompleted) {
+              print("[Confirm] 📭 No final result received");
+              completer.complete(null);
+            }
+          });
+        }
+
+        if (status == "done" && !completer.isCompleted) {
+          print("[Confirm] 🏁 STT marked as done");
+          // Give a moment for final result to come in
+          Timer(Duration(milliseconds: 300), () {
+            if (!completer.isCompleted) {
+              print("[Confirm] 📭 STT done but no result");
+              completer.complete(null);
+            }
+          });
+        }
+      };
+
+      // Start listening - ignore the return value, rely on status listener
+      final listenResult = await _speech.listen(
         listenMode: stt.ListenMode.confirmation,
         pauseFor: const Duration(seconds: 3),
         listenFor: const Duration(seconds: 8),
         onResult: (result) {
           print(
-              "[Confirm] STT Result: '${result.recognizedWords}' (final: ${result.finalResult})");
+              "[Confirm] 📝 STT Result: '${result.recognizedWords}' (final: ${result.finalResult})");
 
           if (result.finalResult && !completer.isCompleted) {
             final transcript = result.recognizedWords.toLowerCase().trim();
-            print("[Confirm] Processing transcript: '$transcript'");
+            print("[Confirm] 🔍 Processing final transcript: '$transcript'");
 
             if (transcript.isEmpty) {
-              print("[Confirm] Empty transcript");
+              print("[Confirm] 📭 Empty transcript");
               completer.complete(null);
             } else if (_isAffirmative(transcript)) {
-              print("[Confirm] Affirmative response detected");
+              print("[Confirm] ✅ Affirmative response detected");
               completer.complete(true);
             } else if (_isNegative(transcript)) {
-              print("[Confirm] Negative response detected");
+              print("[Confirm] ❌ Negative response detected");
               completer.complete(false);
             } else {
-              print("[Confirm] Unclear response: '$transcript'");
+              print("[Confirm] ❓ Unclear response: '$transcript'");
               completer.complete(null);
             }
           }
         },
-        onSoundLevelChange: (level) {
-          // Optional: log sound levels for debugging
-          // print("[Confirm] Sound level: $level");
-        },
       );
 
-      if (!isListening) {
-        print("[Confirm] Failed to start listening");
-        completer.complete(null);
-      } else {
-        print("[Confirm] Successfully started listening");
+      listenAttempted = true;
+      print(
+          "[Confirm] 📞 STT listen() called (returned: $listenResult), waiting for status...");
 
-        // Start timeout ONLY after listening actually begins
-        listeningTimer = Timer(const Duration(seconds: 10), () {
-          if (!completer.isCompleted) {
-            print("[Confirm] Listening timeout reached");
-            _speech.stop();
+      // Set up a backup timer in case the status never changes to "listening"
+      Timer(const Duration(seconds: 3), () {
+        if (!sttActuallyStarted && !completer.isCompleted) {
+          print("[Confirm] ⚠ STT didn't start listening after 3 seconds");
+          // Check if STT is available
+          if (!_speech.isAvailable) {
+            print("[Confirm] ❌ STT is not available");
+            completer.complete(null);
+          } else {
+            print(
+                "[Confirm] ❌ STT available but didn't start - assuming failure");
             completer.complete(null);
           }
-        });
-      }
+        }
+      });
     } catch (e) {
-      print("[Confirm] Exception during listening: $e");
+      print("[Confirm] ❌ Exception during STT setup: $e");
       completer.complete(null);
     }
 
+    // Wait for result
     final result = await completer.future;
 
     // Cleanup
-    listeningTimer?.cancel();
-    if (isListening) {
-      await _speech.stop();
+    timeoutTimer?.cancel();
+    if (listenAttempted || sttActuallyStarted) {
+      try {
+        await _speech.stop();
+      } catch (e) {
+        print("[Confirm] ⚠ Error stopping STT: $e");
+      }
     }
 
+    // Reset status listener
+    _speech.statusListener = null;
+
+    print("[Confirm] 🏁 Listening session ended with result: $result");
     return result;
   }
 
@@ -243,7 +233,6 @@ class ConfirmationHandler {
       "confirm",
       "confirmed"
     ];
-
     return affirmatives.any((word) => input.contains(word));
   }
 
@@ -264,7 +253,6 @@ class ConfirmationHandler {
       "never",
       "abort"
     ];
-
     return negatives.any((word) => input.contains(word));
   }
 }

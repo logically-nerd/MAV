@@ -37,16 +37,6 @@ class _MapScreenState extends State<MapScreen> {
   double _previousDistanceToDestination = 0.0;
   int _wrongDirectionCounter = 0;
   bool _hasWarnedWrongDirection = false;
-  int _wrongDirectionThreshold = 4;
-  double _wrongDirectionMinDeviation = 2.0;
-
-  // Off-route tracking variables
-  bool _isOffRoute = false;
-  int _offRouteCounter = 0;
-  final int _offRouteThreshold = 6;
-  final double _offRouteDistance = 30.0;
-
-  bool _isMapInitialized = false;
 
   @override
   void initState() {
@@ -64,7 +54,6 @@ class _MapScreenState extends State<MapScreen> {
   Future<void> _initializeMapScreen() async {
     print('MAP_SCREEN: Initializing map screen...');
 
-    // Initialize TTS service
     try {
       await _ttsService.init();
       print('MAP_SCREEN: TTS initialized');
@@ -72,10 +61,7 @@ class _MapScreenState extends State<MapScreen> {
       print('MAP_SCREEN: TTS initialization error: $e');
     }
 
-    // Initialize location
     await _getCurrentLocation();
-
-    // Initialize navigation handler
     await NavigationHandler.instance.preload();
 
     print('MAP_SCREEN: Map screen initialization complete');
@@ -105,9 +91,10 @@ class _MapScreenState extends State<MapScreen> {
           _startNavigation();
         } else {
           print('MAP_SCREEN: Cannot start navigation - missing position data');
-          _ttsService.speak(
-              "Cannot start navigation. Please set a destination first.",
-              TtsPriority.conversation);
+          _ttsService.speakAndWait(
+            "Cannot start navigation. Please set a destination first.",
+            TtsPriority.conversation,
+          );
         }
       },
       onNavigationStop: () {
@@ -116,7 +103,8 @@ class _MapScreenState extends State<MapScreen> {
       },
     );
 
-    _ttsService.speak("Map system ready for voice commands", TtsPriority.map);
+    _ttsService.speakAndWait(
+        "Map system ready for voice commands", TtsPriority.map);
   }
 
   Future<void> _getCurrentLocation() async {
@@ -132,7 +120,6 @@ class _MapScreenState extends State<MapScreen> {
 
         await _cameraToPosition(position);
 
-        // Set up location updates
         MapService.getLocationUpdates(
           onLocationUpdate: (LatLng newPosition) {
             if (mounted) {
@@ -209,8 +196,6 @@ class _MapScreenState extends State<MapScreen> {
 
   Future<void> _fitMapToShowRoute(LatLng origin, LatLng destination) async {
     try {
-      print('MAP_SCREEN: Fitting map to show route');
-
       final controller = await _mapController.future;
 
       double minLat = min(origin.latitude, destination.latitude);
@@ -229,26 +214,8 @@ class _MapScreenState extends State<MapScreen> {
       await controller.animateCamera(
         CameraUpdate.newLatLngBounds(bounds, 100.0),
       );
-
-      print('MAP_SCREEN: Camera animation completed');
     } catch (e) {
       print('Error fitting map to route: $e');
-      try {
-        final controller = await _mapController.future;
-        final centerLat = (origin.latitude + destination.latitude) / 2;
-        final centerLng = (origin.longitude + destination.longitude) / 2;
-
-        await controller.animateCamera(
-          CameraUpdate.newCameraPosition(
-            CameraPosition(
-              target: LatLng(centerLat, centerLng),
-              zoom: 14.0,
-            ),
-          ),
-        );
-      } catch (fallbackError) {
-        print('Fallback camera positioning also failed: $fallbackError');
-      }
     }
   }
 
@@ -266,15 +233,13 @@ class _MapScreenState extends State<MapScreen> {
       _currentInstructionText = '';
       _currentStepIndex = 0;
       _distanceToDestination = 0.0;
-      _isOffRoute = false;
-      _offRouteCounter = 0;
       _wrongDirectionCounter = 0;
       _hasWarnedWrongDirection = false;
       _hasAnnouncedNextTurn = false;
       _updateMarkers();
     });
 
-    _updateNavigationState();
+    NavigationHandler.instance.updateNavigationState(false);
 
     if (_currentPosition != null) {
       _cameraToPosition(_currentPosition!);
@@ -287,30 +252,27 @@ class _MapScreenState extends State<MapScreen> {
     print('MAP_NAV: Starting navigation process');
     if (_currentPosition == null || _destinationPosition == null) {
       print('MAP_NAV: Cannot start - missing position data');
-      _ttsService.speak(
-          "Cannot start navigation. Please set a destination first.",
-          TtsPriority.conversation);
+      _ttsService.speakAndWait(
+        "Cannot start navigation. Please set a destination first.",
+        TtsPriority.conversation,
+      );
       return;
     }
 
     setState(() {
       _isNavigating = true;
-      _isLoading = true;
       _previousDistanceToDestination = 0.0;
       _wrongDirectionCounter = 0;
       _hasWarnedWrongDirection = false;
-      _isOffRoute = false;
-      _offRouteCounter = 0;
     });
 
-    _updateNavigationState();
+    NavigationHandler.instance.updateNavigationState(true);
 
     try {
-      print('MAP_NAV: Fetching navigation steps...');
       _navigationSteps = await MapService.getNavigationSteps(
-          origin: _currentPosition!, destination: _destinationPosition!);
-
-      print('MAP_NAV: Got ${_navigationSteps.length} navigation steps');
+        origin: _currentPosition!,
+        destination: _destinationPosition!,
+      );
 
       if (_navigationSteps.isNotEmpty) {
         _currentStepIndex = 0;
@@ -322,84 +284,41 @@ class _MapScreenState extends State<MapScreen> {
         );
         _hasAnnouncedNextTurn = false;
 
-        print('MAP_NAV: Initial instruction: $_currentInstructionText');
-        print('MAP_NAV: Total distance: $_distanceToDestination meters');
-      } else {
-        print('MAP_NAV: Warning - no navigation steps returned');
+        _startNavigationUpdates();
+        _showNavigationInstruction(isNewStep: true);
+        _updateNavigationCamera();
       }
-
-      setState(() {
-        _isLoading = false;
-      });
-
-      _startNavigationUpdates();
-      _showNavigationInstruction(isNewStep: true);
-      _updateNavigationCamera();
-
-      print('MAP_NAV: Navigation started successfully');
     } catch (e) {
       print('MAP_NAV: Error starting navigation: $e');
-      _ttsService.speak("Error starting navigation. Please try again.",
-          TtsPriority.conversation);
+      _ttsService.speakAndWait(
+        "Error starting navigation. Please try again.",
+        TtsPriority.conversation,
+      );
       setState(() {
         _isNavigating = false;
-        _isLoading = false;
       });
-      _updateNavigationState();
+      NavigationHandler.instance.updateNavigationState(false);
     }
   }
 
   void _startNavigationUpdates() {
-    print('MAP_NAV: Starting location updates for navigation');
-
     _navigationTimer?.cancel();
 
-    _navigationTimer =
-        Timer.periodic(const Duration(milliseconds: 500), (timer) {
+    _navigationTimer = Timer.periodic(const Duration(seconds: 2), (timer) {
       if (_currentPosition != null &&
           _destinationPosition != null &&
           _isNavigating) {
         _updateDistanceToDestination();
-        _checkIfOffRoute();
-
-        if (timer.tick % 4 == 0) {
-          print(
-              'MAP_NAV: Distance to destination: ${_distanceToDestination.toStringAsFixed(2)}m');
-        }
 
         if (MapService.hasReachedDestination(
             _currentPosition!, _destinationPosition!)) {
-          print('MAP_NAV: DESTINATION REACHED!');
           _navigationArrived();
         } else {
           _checkForStepProgress();
-
-          if (timer.tick % 6 == 0) {
-            _updateNavigationCamera();
-            _updateRoutePolyline();
-          }
+          _updateNavigationCamera();
         }
       }
     });
-  }
-
-  Future<void> _updateRoutePolyline() async {
-    if (_currentPosition != null && _destinationPosition != null) {
-      try {
-        final points = await MapService.getPolylinePoints(
-          origin: _currentPosition!,
-          destination: _destinationPosition!,
-        );
-        final polyline = MapService.generatePolylineFromPoints(points);
-        if (mounted) {
-          setState(() {
-            polylines[polyline.polylineId] = polyline;
-          });
-        }
-      } catch (e) {
-        print('Error updating route polyline: $e');
-      }
-    }
   }
 
   void _updateDistanceToDestination() {
@@ -408,19 +327,13 @@ class _MapScreenState extends State<MapScreen> {
     double distanceInMeters =
         MapService.calculateDistance(_currentPosition!, _destinationPosition!);
 
+    // Check for wrong direction
     if (_previousDistanceToDestination > 0 &&
-        distanceInMeters > _previousDistanceToDestination &&
+        distanceInMeters > _previousDistanceToDestination + 5 &&
         _isNavigating) {
-      double deviation = distanceInMeters - _previousDistanceToDestination;
+      _wrongDirectionCounter++;
 
-      if (deviation > _wrongDirectionMinDeviation) {
-        _wrongDirectionCounter++;
-        print(
-            'MAP_NAV: Possible wrong direction detected. Counter: $_wrongDirectionCounter, Deviation: ${deviation.toStringAsFixed(2)}m');
-      }
-
-      if (_wrongDirectionCounter >= _wrongDirectionThreshold &&
-          !_hasWarnedWrongDirection) {
+      if (_wrongDirectionCounter >= 3 && !_hasWarnedWrongDirection) {
         _warnWrongDirection();
         _hasWarnedWrongDirection = true;
         _wrongDirectionCounter = 0;
@@ -437,8 +350,6 @@ class _MapScreenState extends State<MapScreen> {
       if (_wrongDirectionCounter > 0 &&
           distanceInMeters < _previousDistanceToDestination) {
         _wrongDirectionCounter = 0;
-        print(
-            'MAP_NAV: Back on the right track, reset wrong direction counter');
       }
     }
 
@@ -452,56 +363,18 @@ class _MapScreenState extends State<MapScreen> {
   void _warnWrongDirection() {
     if (!_isNavigating) return;
 
-    print('MAP_NAV: WARNING - User moving in wrong direction!');
-
-    double bearing = 0;
-    String directionText = "turn around";
-
-    if (_currentStepIndex < _navigationSteps.length) {
-      final targetPoint = _navigationSteps[_currentStepIndex].endLocation;
-      bearing = MapService.calculateBearing(_currentPosition!, targetPoint);
-      directionText = _getDirectionFromBearing(bearing);
-    }
-
-    ScaffoldMessenger.of(context).hideCurrentSnackBar();
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Row(
-          children: [
-            const Icon(Icons.warning, color: Colors.white),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Text(
-                'Wrong direction! Please $directionText',
-                style: const TextStyle(fontWeight: FontWeight.bold),
-              ),
-            ),
-          ],
-        ),
+      const SnackBar(
+        content: Text('Wrong direction! Please turn around'),
         backgroundColor: Colors.red,
-        duration: const Duration(seconds: 5),
+        duration: Duration(seconds: 5),
       ),
     );
 
-    _speakDirections(
-        "You're going in the wrong direction. Please $directionText");
-  }
-
-  String _getDirectionFromBearing(double bearing) {
-    bearing = (bearing + 360) % 360;
-
-    if (bearing >= 337.5 || bearing < 22.5) return "turn around and head north";
-    if (bearing >= 22.5 && bearing < 67.5)
-      return "turn around and head northeast";
-    if (bearing >= 67.5 && bearing < 112.5) return "turn around and head east";
-    if (bearing >= 112.5 && bearing < 157.5)
-      return "turn around and head southeast";
-    if (bearing >= 157.5 && bearing < 202.5)
-      return "turn around and head south";
-    if (bearing >= 202.5 && bearing < 247.5)
-      return "turn around and head southwest";
-    if (bearing >= 247.5 && bearing < 292.5) return "turn around and head west";
-    return "turn around and head northwest";
+    _ttsService.speakAndWait(
+      "You're going in the wrong direction. Please turn around",
+      TtsPriority.map,
+    );
   }
 
   void _checkForStepProgress() {
@@ -512,20 +385,15 @@ class _MapScreenState extends State<MapScreen> {
 
     final LatLng endOfCurrentStep =
         _navigationSteps[_currentStepIndex].endLocation;
-    double distanceToEndOfStep =
-        MapService.calculateDistance(_currentPosition!, endOfCurrentStep);
 
     if (MapService.isApproachingTurn(_currentPosition!, endOfCurrentStep) &&
         !_hasAnnouncedNextTurn &&
         _currentStepIndex < _navigationSteps.length - 1) {
-      print('MAP_NAV: Approaching turn, announcing next direction');
       _hasAnnouncedNextTurn = true;
       _announceNextTurn();
     }
 
     if (MapService.hasReachedStepEnd(_currentPosition!, endOfCurrentStep)) {
-      print(
-          'MAP_NAV: Reached end of step ${_currentStepIndex + 1}, advancing to next step');
       setState(() {
         _currentStepIndex++;
         if (_currentStepIndex < _navigationSteps.length) {
@@ -545,30 +413,7 @@ class _MapScreenState extends State<MapScreen> {
     final instruction = nextStep.instruction;
     final distance = nextStep.distance;
 
-    final announcementText = "In $distance, $instruction";
-
-    print('MAP_NAV: ANNOUNCEMENT - ${instruction.toUpperCase()}');
-
-    ScaffoldMessenger.of(context).hideCurrentSnackBar();
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Row(
-          children: [
-            const Icon(Icons.volume_up, color: Colors.white),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Text(
-                'Upcoming: $instruction',
-                style: const TextStyle(fontWeight: FontWeight.bold),
-              ),
-            ),
-          ],
-        ),
-        backgroundColor: Colors.orange,
-        duration: const Duration(seconds: 3),
-      ),
-    );
-    _speakDirections(announcementText);
+    _ttsService.speakAndWait("In $distance, $instruction", TtsPriority.map);
   }
 
   void _showNavigationInstruction({bool isNewStep = false}) {
@@ -579,30 +424,9 @@ class _MapScreenState extends State<MapScreen> {
     }
 
     final step = _navigationSteps[_currentStepIndex];
-    print(
-        'MAP_NAV: Showing instruction for step ${_currentStepIndex + 1}: ${step.instruction}');
 
     if (isNewStep) {
-      ScaffoldMessenger.of(context).hideCurrentSnackBar();
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                step.instruction,
-                style: const TextStyle(fontWeight: FontWeight.bold),
-              ),
-              Text('${step.distance} • ${step.duration}'),
-            ],
-          ),
-          backgroundColor: Colors.blue.shade700,
-          duration: const Duration(seconds: 4),
-        ),
-      );
-      _speakDirections(step.instruction);
-      print('MAP_NAV: VOICE GUIDANCE - ${step.instruction.toUpperCase()}');
+      _ttsService.speakAndWait(step.instruction, TtsPriority.map);
     }
   }
 
@@ -613,9 +437,8 @@ class _MapScreenState extends State<MapScreen> {
     setState(() {
       _isNavigating = false;
     });
-    _updateNavigationState();
+    NavigationHandler.instance.updateNavigationState(false);
 
-    ScaffoldMessenger.of(context).hideCurrentSnackBar();
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
         content: Text('🎉 You have arrived at your destination!'),
@@ -623,115 +446,9 @@ class _MapScreenState extends State<MapScreen> {
         duration: Duration(seconds: 5),
       ),
     );
-    _speakDirections("Congratulations! You have arrived at your destination.");
-  }
-
-  void _checkIfOffRoute() {
-    if (!_isNavigating || _currentPosition == null || _navigationSteps.isEmpty)
-      return;
-
-    if (_currentStepIndex < _navigationSteps.length) {
-      final currentStep = _navigationSteps[_currentStepIndex];
-
-      double distanceToRoute = _calculateDistanceToRouteSegment(
-          _currentPosition!,
-          currentStep.startLocation,
-          currentStep.endLocation);
-
-      if (distanceToRoute > _offRouteDistance) {
-        _offRouteCounter++;
-        print(
-            'MAP_NAV: Possibly off route. Counter: $_offRouteCounter, Distance from route: ${distanceToRoute.toStringAsFixed(2)}m');
-
-        if (_offRouteCounter >= _offRouteThreshold && !_isOffRoute) {
-          _isOffRoute = true;
-          _handleOffRouteRerouting();
-        }
-      } else {
-        if (_offRouteCounter > 0) {
-          _offRouteCounter = 0;
-          _isOffRoute = false;
-          print('MAP_NAV: Back on route, reset off-route counter');
-        }
-      }
-    }
-  }
-
-  double _calculateDistanceToRouteSegment(
-      LatLng position, LatLng segmentStart, LatLng segmentEnd) {
-    double distanceToStart =
-        MapService.calculateDistance(position, segmentStart);
-    double distanceToEnd = MapService.calculateDistance(position, segmentEnd);
-    double segmentLength =
-        MapService.calculateDistance(segmentStart, segmentEnd);
-
-    if (segmentLength < 5) {
-      return min(distanceToStart, distanceToEnd);
-    }
-
-    double p = (distanceToStart + distanceToEnd + segmentLength) / 2;
-    double area = sqrt(
-        p * (p - distanceToStart) * (p - distanceToEnd) * (p - segmentLength));
-
-    return (2 * area) / segmentLength;
-  }
-
-  Future<void> _handleOffRouteRerouting() async {
-    if (!_isNavigating || _destinationPosition == null) return;
-
-    print('MAP_NAV: Handling off-route rerouting');
-
-    ScaffoldMessenger.of(context).hideCurrentSnackBar();
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Row(
-          children: [
-            const Icon(Icons.route, color: Colors.white),
-            const SizedBox(width: 10),
-            const Expanded(
-              child: Text(
-                'You appear to be off route. Recalculating...',
-                style: TextStyle(fontWeight: FontWeight.bold),
-              ),
-            ),
-          ],
-        ),
-        backgroundColor: Colors.orange,
-        duration: const Duration(seconds: 3),
-      ),
-    );
-
-    await _speakDirections(
-        "You appear to be off route. Recalculating directions.");
-
-    try {
-      print('MAP_NAV: Fetching new route from current position to destination');
-      final newSteps = await MapService.getNavigationSteps(
-        origin: _currentPosition!,
-        destination: _destinationPosition!,
-      );
-
-      if (newSteps.isNotEmpty) {
-        setState(() {
-          _navigationSteps = newSteps;
-          _currentStepIndex = 0;
-          _currentInstructionText = _navigationSteps[0].instruction;
-          _isOffRoute = false;
-          _offRouteCounter = 0;
-          _hasAnnouncedNextTurn = false;
-        });
-
-        await _updateRoutePolyline();
-        _showNavigationInstruction(isNewStep: true);
-
-        print(
-            'MAP_NAV: Route successfully recalculated with ${newSteps.length} steps');
-      } else {
-        print('MAP_NAV: Failed to get new navigation steps');
-      }
-    } catch (e) {
-      print('MAP_NAV: Error during rerouting: $e');
-    }
+    _ttsService.speakAndWait(
+        "Congratulations! You have arrived at your destination.",
+        TtsPriority.map);
   }
 
   Future<void> _updateNavigationCamera() async {
@@ -746,26 +463,14 @@ class _MapScreenState extends State<MapScreen> {
         bearing = MapService.calculateBearing(_currentPosition!, targetPoint);
       }
 
-      double zoom = 19.0;
-      double tilt = 60.0;
-
-      if (_distanceToDestination > 1000) {
-        zoom = 16.0;
-        tilt = 45.0;
-      } else if (_distanceToDestination > 500) {
-        zoom = 17.0;
-        tilt = 50.0;
-      } else if (_distanceToDestination > 200) {
-        zoom = 18.0;
-        tilt = 55.0;
-      }
+      double zoom = _distanceToDestination > 500 ? 16.0 : 18.0;
 
       controller.animateCamera(
         CameraUpdate.newCameraPosition(
           CameraPosition(
             target: _currentPosition!,
             zoom: zoom,
-            tilt: tilt,
+            tilt: 45.0,
             bearing: bearing,
           ),
         ),
@@ -786,79 +491,33 @@ class _MapScreenState extends State<MapScreen> {
     }
   }
 
-  void _updateNavigationState() {
-    NavigationHandler.instance.updateNavigationState(_isNavigating);
-  }
-
-  Future<void> _speakDirections(String instruction) async {
-    print('MAP_NAV: Speaking - $instruction');
-
-    try {
-      Completer<void> completer = Completer<void>();
-
-      _ttsService.speak(
-        instruction,
-        TtsPriority.map,
-        onComplete: () {
-          completer.complete();
-        },
-      );
-
-      await completer.future;
-    } catch (e) {
-      print('MAP_NAV: TTS error: $e');
-    }
-  }
-
   String getFormattedRemainingDistance() {
     return MapService.formatDistance(_distanceToDestination);
   }
 
   @override
   Widget build(BuildContext context) {
-    print(
-        'MAP_SCREEN: Building UI, isLoading: $_isLoading, isNavigating: $_isNavigating');
-
     return Scaffold(
       body: Stack(
         children: [
-          // Map widget
           _isLoading
               ? const Center(child: CircularProgressIndicator())
               : _currentPosition == null
                   ? const Center(child: Text("Could not get location"))
                   : GoogleMap(
                       onMapCreated: (controller) {
-                        print('MAP_SCREEN: Map created');
-                        try {
-                          if (!_mapController.isCompleted) {
-                            _mapController.complete(controller);
-                            print(
-                                'MAP_SCREEN: Controller completed successfully');
-
-                            setState(() {
-                              _isMapInitialized = true;
-                            });
-
-                            // Register callbacks only after map is created
-                            _registerNavigationCallbacks();
-                          }
-                        } catch (e) {
-                          print('MAP_SCREEN: Error completing controller: $e');
+                        if (!_mapController.isCompleted) {
+                          _mapController.complete(controller);
+                          _registerNavigationCallbacks();
                         }
                       },
                       initialCameraPosition:
                           CameraPosition(target: _currentPosition!, zoom: 15),
                       polylines: Set<Polyline>.of(polylines.values),
                       markers: _markers,
-                      mapToolbarEnabled: false,
                       myLocationEnabled: true,
                       myLocationButtonEnabled: false,
                       zoomControlsEnabled: false,
-                      zoomGesturesEnabled: false,
-                      tiltGesturesEnabled: false,
-                      rotateGesturesEnabled: false,
-                      scrollGesturesEnabled: false,
                     ),
 
           // Navigation info panel
@@ -898,68 +557,36 @@ class _MapScreenState extends State<MapScreen> {
                               color:
                                   _isNavigating ? Colors.white : Colors.black87,
                             ),
-                            maxLines: 3,
-                            overflow: TextOverflow.ellipsis,
                           ),
                         ),
                       ],
                     ),
                     const SizedBox(height: 8),
                     Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        Row(
-                          children: [
-                            Icon(
-                              Icons.directions_walk,
-                              color: _isNavigating ? Colors.white : Colors.blue,
-                            ),
-                            const SizedBox(width: 8),
-                            Text(
-                              getFormattedRemainingDistance(),
-                              style: TextStyle(
-                                color:
-                                    _isNavigating ? Colors.white : Colors.blue,
-                                fontWeight: FontWeight.w500,
-                              ),
-                            ),
-                          ],
+                        Icon(
+                          Icons.directions_walk,
+                          color: _isNavigating ? Colors.white : Colors.blue,
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          getFormattedRemainingDistance(),
+                          style: TextStyle(
+                            color: _isNavigating ? Colors.white : Colors.blue,
+                            fontWeight: FontWeight.w500,
+                          ),
                         ),
                       ],
                     ),
-                    if (_isNavigating &&
-                        _navigationSteps.isNotEmpty &&
-                        _currentStepIndex < _navigationSteps.length)
+                    if (_isNavigating && _currentInstructionText.isNotEmpty)
                       Padding(
                         padding: const EdgeInsets.only(top: 10.0),
-                        child: Row(
-                          children: [
-                            Container(
-                              padding: const EdgeInsets.all(4),
-                              decoration: BoxDecoration(
-                                color: Colors.white,
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                              child: Text(
-                                '${_currentStepIndex + 1}',
-                                style: TextStyle(
-                                  color: Colors.blue.shade800,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                            ),
-                            const SizedBox(width: 10),
-                            Expanded(
-                              child: Text(
-                                _currentInstructionText,
-                                style: const TextStyle(
-                                    color: Colors.white,
-                                    fontWeight: FontWeight.w500),
-                                maxLines: 2,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            ),
-                          ],
+                        child: Text(
+                          _currentInstructionText,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w500,
+                          ),
                         ),
                       ),
                   ],
