@@ -291,22 +291,27 @@ class TtsService {
 
   /// Stop current speech and clear queue
   void stop() {
-    print("[TTS Service] ⏹ Stopping all speech");
+    print("[TTS Service] 🛑 Immediate stop requested");
 
     _fallbackTimer?.cancel();
     _fallbackTimer = null;
 
+    // Stop TTS immediately
     _flutterTts.stop();
 
+    // Complete any pending futures immediately
     if (_currentCompleter != null && !_currentCompleter!.isCompleted) {
       _currentCompleter!.complete();
       _currentCompleter = null;
     }
 
+    // Clear queue and reset state
     _queue.clear();
     _isSpeaking = false;
     _currentRequestCompletion = null;
     _currentRequestPriority = null;
+
+    print("[TTS Service] ✓ Immediate stop completed");
   }
 
   /// Check if currently speaking

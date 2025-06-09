@@ -53,13 +53,17 @@ class ConversationService {
   Future<void> _feedbackStart() async {
     HapticFeedback.heavyImpact();
     // Block lower priority TTS before starting
+    _ttsService.stop();
+    // Small delay to ensure TTS cleanup
+    await Future.delayed(Duration(milliseconds: 200));
+
     _ttsService.blockLowPriority();
 
     // Wait for any current speech to complete before STT
-    while (_ttsService.isSpeaking) {
-      print("[Conversation] Waiting for TTS to complete before STT...");
-      await Future.delayed(Duration(milliseconds: 100));
-    }
+    // while (_ttsService.isSpeaking) {
+    //   print("[Conversation] Waiting for TTS to complete before STT...");
+    //   await Future.delayed(Duration(milliseconds: 100));
+    // }
     // Use speakAndWait to ensure "Listening" completes before STT starts
     await _ttsService.speakAndWait("Listening", TtsPriority.conversation);
     print("[Conversation] ✓ 'Listening' speech completed");

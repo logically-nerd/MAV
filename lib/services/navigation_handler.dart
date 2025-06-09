@@ -128,12 +128,13 @@ class NavigationHandler {
       } else if (confirmed == false) {
         await _ttsService.speakAndWait(
             "Navigation cancelled.", TtsPriority.conversation);
-      } else {
-        await _ttsService.speakAndWait(
-          "I didn't understand your response. Please try again.",
-          TtsPriority.conversation,
-        );
       }
+      //  else {
+      //   await _ttsService.speakAndWait(
+      //     "I didn't understand your response. Please try again.",
+      //     TtsPriority.conversation,
+      //   );
+      // }
     } catch (e) {
       print("[NavigationHandler] Error: $e");
       await _ttsService.speakAndWait(

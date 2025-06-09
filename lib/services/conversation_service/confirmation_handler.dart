@@ -65,6 +65,15 @@ class ConfirmationHandler {
           return result;
         } else {
           print("[Confirm] ❌ No valid result, will retry if attempts remain");
+          // Only prompt for retry if we have attempts left
+          if (attempts < maxAttempts) {
+            print(
+                "[Confirm] 🔄 Prompting for retry (attempt ${attempts + 1} of $maxAttempts)");
+            await _ttsService.speakAndWait(
+              "I didn't catch that. Please say yes or no.",
+              TtsPriority.confirmation,
+            );
+          }
         }
       } catch (e) {
         print("[Confirm] ❌ Error in attempt $attempts: $e");
