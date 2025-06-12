@@ -33,7 +33,34 @@ class AwarenessHandler {
 
   // WebSocket connection to YOLO server
   WebSocketChannel? _channel;
-  final String _wsUrl = 'ws://192.168.29.94:8765';
+  late String _wsUrl;
+
+  // Initialize the WebSocket URL from environment variables
+  Future<void> _initializeWsUrl() async {
+    try {
+      final envVars = await rootBundle.loadString('assets/.env');
+      final Map<String, String> env = {};
+      
+      for (var line in envVars.split('\n')) {
+        line = line.trim();
+        if (line.isNotEmpty && !line.startsWith('#')) {
+          final parts = line.split('=');
+          if (parts.length == 2) {
+            env[parts[0]] = parts[1];
+          }
+        }
+      }
+      
+      final ipAddress = env['IP_ADDRESS'] ?? '127.0.0.1';
+      final port = env['PORT'] ?? '8765';
+      _wsUrl = 'ws://$ipAddress:$port';
+      print("[Awareness] WebSocket URL initialized: $_wsUrl");
+    } catch (e) {
+      print("[Awareness] Failed to load environment variables: $e");
+      // Fallback to default values
+      _wsUrl = 'ws://127.0.0.1:8765';
+    }
+  }
 
   // Camera control
   CameraController? _cameraController;
@@ -50,6 +77,7 @@ class AwarenessHandler {
 
   AwarenessHandler._internal() {
     // Block all TTS requests except SOS and awareness from initialization
+    _initializeWsUrl();
   }
 
   bool get isAwarenessActive => _isAwarenessActive;
