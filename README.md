@@ -52,6 +52,15 @@ Before running the application, ensure you have the following installed:
         # other assets...
     ```
 
+    Also configure the `GOOGLE_MAPS_API_KEY` in the `local.properties` file:
+
+    1.  Open the `local.properties` file located in the `android` directory of your Flutter project. If the file doesn't exist, create it.
+    2.  Add the following line to the `local.properties` file, replacing `YOUR_GOOGLE_MAPS_API_KEY` with your actual API key:
+
+        ```
+        GOOGLE_MAPS_API_KEY=YOUR_GOOGLE_MAPS_API_KEY
+        ```
+
 4.  **Run the Python Server:**
 
     Navigate to the `python_server` directory:
