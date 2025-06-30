@@ -1,3 +1,5 @@
+<img align="right" src="https://visitor-badge.laobi.icu/badge?page_id=logically-nerd.MAV" />
+
 # MAV
 
 A Flutter project for mobile assisted vision.
